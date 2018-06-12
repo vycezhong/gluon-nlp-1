@@ -450,6 +450,12 @@ def train():
                 trainer.set_learning_rate(new_lr)
             src_wc = src_valid_length.sum().asscalar()
             tgt_wc = tgt_valid_length.sum().asscalar()
+            #logging.info('======')
+            #logging.info(src_wc)
+            #logging.info(tgt_wc)
+            #logging.info('----')
+            #logging.info(np.prod(src_seq.shape))
+            #logging.info(np.prod(tgt_seq.shape))
             loss_denom += tgt_wc - tgt_valid_length.shape[0]
             if src_seq.shape[0] > len(ctx):
                 src_seq_list, tgt_seq_list, src_valid_length_list, tgt_valid_length_list \
