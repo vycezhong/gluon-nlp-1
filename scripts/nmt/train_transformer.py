@@ -275,6 +275,9 @@ def load_translation_data(dataset, src_lang='en', tgt_lang='vi'):
             val_text = WMT2014('newstest2013', src_lang=src_lang, tgt_lang=tgt_lang)
             test_text = WMT2014('newstest2014', src_lang=src_lang, tgt_lang=tgt_lang,
                                 full=args.full)
+        elif dataset == 'IWSLT2015':
+            val_text = data_val
+            test_text = data_test
         else:
             raise NotImplementedError
         val_tgt_sentences = list(val_text.transform(fetch_tgt_sentence))
@@ -501,12 +504,13 @@ def train():
         step_loss = 0
         log_start_time = time.time()
         gpu_id = 0
-        src_seq_list = []
-        tgt_seq_list = []
-        src_valid_length_list = []
-        tgt_valid_length_list = []
         for batch_id, (src_seq, tgt_seq, src_valid_length, tgt_valid_length) \
                 in enumerate(train_data_loader):
+            if gpu_id == 0:
+                src_seq_list = []
+                tgt_seq_list = []
+                src_valid_length_list = []
+                tgt_valid_length_list = []
             src_seq_list.append(src_seq.as_in_context(ctx[gpu_id]))
             tgt_seq_list.append(tgt_seq.as_in_context(ctx[gpu_id]))
             src_valid_length_list.append(src_valid_length.as_in_context(ctx[gpu_id]))
@@ -515,7 +519,7 @@ def train():
             if gpu_id < len(ctx) and batch_id != len(train_data_loader) - 1:
                 continue
             gpu_id = 0
-            if batch_id % grad_interval == 0:
+            if batch_id % grad_interval == grad_interval - 1:
                 step_num += 1
                 new_lr = args.lr / math.sqrt(args.num_units) \
                          * min(1. / math.sqrt(step_num), step_num * warmup_steps ** (-1.5))
