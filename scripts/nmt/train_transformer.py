@@ -489,7 +489,7 @@ def train():
     best_valid_bleu = 0.0
     step_num = 0
     warmup_steps = args.warmup_steps
-    grad_interval = args.num_accumulated
+    grad_interval = args.num_accumulated * len(ctx)
     model.collect_params().setattr('grad_req', 'add')
     average_start = (len(train_data_loader) // grad_interval) * (args.epochs - args.average_start)
     average_param_dict = None
@@ -500,26 +500,31 @@ def train():
         loss_denom = 0
         step_loss = 0
         log_start_time = time.time()
+        gpu_id = 0
+        src_seq_list = []
+        tgt_seq_list = []
+        src_valid_length_list = []
+        tgt_valid_length_list = []
         for batch_id, (src_seq, tgt_seq, src_valid_length, tgt_valid_length) \
                 in enumerate(train_data_loader):
+            src_seq_list.append(src_seq.as_in_context(ctx[gpu_id]))
+            tgt_seq_list.append(tgt_seq.as_in_context(ctx[gpu_id]))
+            src_valid_length_list.append(src_valid_length.as_in_context(ctx[gpu_id]))
+            tgt_valid_length_list.append(tgt_valid_length.as_in_context(ctx[gpu_id]))
+            gpu_id += 1
+            if gpu_id < len(ctx) and batch_id != len(train_data_loader) - 1:
+                continue
+            gpu_id = 0
             if batch_id % grad_interval == 0:
                 step_num += 1
                 new_lr = args.lr / math.sqrt(args.num_units) \
                          * min(1. / math.sqrt(step_num), step_num * warmup_steps ** (-1.5))
                 trainer.set_learning_rate(new_lr)
-            src_wc = src_valid_length.sum().asscalar()
-            tgt_wc = tgt_valid_length.sum().asscalar()
-            loss_denom += tgt_wc - tgt_valid_length.shape[0]
-            if src_seq.shape[0] > len(ctx):
-                src_seq_list, tgt_seq_list, src_valid_length_list, tgt_valid_length_list \
-                    = [gluon.utils.split_and_load(seq, ctx, batch_axis=0, even_split=False)
-                       for seq in [src_seq, tgt_seq, src_valid_length, tgt_valid_length]]
-            else:
-                src_seq_list = [src_seq.as_in_context(ctx[0])]
-                tgt_seq_list = [tgt_seq.as_in_context(ctx[0])]
-                src_valid_length_list = [src_valid_length.as_in_context(ctx[0])]
-                tgt_valid_length_list = [tgt_valid_length.as_in_context(ctx[0])]
-
+            src_wc = sum([src_valid_length.sum().asscalar() for src_valid_length
+                          in src_valid_length_list])
+            tgt_wc = sum([tgt_valid_length.sum().asscalar() for tgt_valid_length
+                          in tgt_valid_length_list])
+            loss_denom += tgt_wc - sum([tgt_seq.shape[0] for tgt_seq in tgt_seq_list])
             Ls = []
             with mx.autograd.record():
                 for src_seq, tgt_seq, src_valid_length, tgt_valid_length \
