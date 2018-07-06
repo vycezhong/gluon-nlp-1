@@ -47,6 +47,7 @@ from mxnet import gluon
 from mxnet.gluon.data import ArrayDataset, SimpleDataset
 from mxnet.gluon.data import DataLoader
 import gluonnlp.data.batchify as btf
+from gluonnlp.data import ShardedDataLoader
 from gluonnlp.data import NLTKMosesDetokenizer
 from gluonnlp.data import ConstWidthBucket, LinearWidthBucket, ExpWidthBucket,\
     FixedBucketSampler, IWSLT2015, WMT2016, WMT2016BPE, WMT2014, WMT2014BPE
@@ -443,12 +444,13 @@ def train():
                                              ratio=args.bucket_ratio,
                                              shuffle=True,
                                              use_average_length=True,
+                                             num_shards=len(ctx),
                                              bucket_scheme=bucket_scheme)
     logging.info('Train Batch Sampler:\n{}'.format(train_batch_sampler.stats()))
-    train_data_loader = DataLoader(data_train,
-                                   batch_sampler=train_batch_sampler,
-                                   batchify_fn=train_batchify_fn,
-                                   num_workers=8)
+    train_data_loader = ShardedDataLoader(data_train,
+                                          batch_sampler=train_batch_sampler,
+                                          batchify_fn=train_batchify_fn,
+                                          num_workers=8)
 
     val_batch_sampler = FixedBucketSampler(lengths=target_val_lengths,
                                            batch_size=args.test_batch_size,
@@ -500,31 +502,23 @@ def train():
         loss_denom = 0
         step_loss = 0
         log_start_time = time.time()
-        for batch_id, (src_seq, tgt_seq, src_valid_length, tgt_valid_length) \
+        for batch_id, seqs \
                 in enumerate(train_data_loader):
             if batch_id % grad_interval == 0:
                 step_num += 1
                 new_lr = args.lr / math.sqrt(args.num_units) \
                          * min(1. / math.sqrt(step_num), step_num * warmup_steps ** (-1.5))
                 trainer.set_learning_rate(new_lr)
-            src_wc = src_valid_length.sum().asscalar()
-            tgt_wc = tgt_valid_length.sum().asscalar()
-            loss_denom += tgt_wc - tgt_valid_length.shape[0]
-            if src_seq.shape[0] > len(ctx):
-                src_seq_list, tgt_seq_list, src_valid_length_list, tgt_valid_length_list \
-                    = [gluon.utils.split_and_load(seq, ctx, batch_axis=0, even_split=False)
-                       for seq in [src_seq, tgt_seq, src_valid_length, tgt_valid_length]]
-            else:
-                src_seq_list = [src_seq.as_in_context(ctx[0])]
-                tgt_seq_list = [tgt_seq.as_in_context(ctx[0])]
-                src_valid_length_list = [src_valid_length.as_in_context(ctx[0])]
-                tgt_valid_length_list = [tgt_valid_length.as_in_context(ctx[0])]
-
+            src_wc, tgt_wc, bs = np.sum([(shard[2].sum(), shard[3].sum(), shard[0].shape[0])
+                                         for shard in seqs], axis=0)
+            src_wc = src_wc.asscalar()
+            tgt_wc = tgt_wc.asscalar()
+            loss_denom += tgt_wc - bs
+            seqs = [[seq.as_in_context(context) for seq in shard]
+                    for context, shard in zip(ctx, seqs)]
             Ls = []
             with mx.autograd.record():
-                for src_seq, tgt_seq, src_valid_length, tgt_valid_length \
-                        in zip(src_seq_list, tgt_seq_list,
-                               src_valid_length_list, tgt_valid_length_list):
+                for src_seq, tgt_seq, src_valid_length, tgt_valid_length in seqs:
                     out, _ = model(src_seq, tgt_seq[:, :-1],
                                    src_valid_length, tgt_valid_length - 1)
                     smoothed_label = label_smoothing(tgt_seq[:, 1:])

@@ -291,6 +291,12 @@ class FixedBucketSampler(Sampler):
         False: each batch contains batch_size sequences, number of sequence elements varies.
         True: each batch contains batch_size elements, number of sequences varies. In this case,
         ratio option is ignored.
+    num_shards : int, default 0
+        If num_shards > 0, the sampled batch is split into num_shards smaller batches.
+        The output will have structure of list(list(int)).
+        If num_shards = 0, the output will have structure of list(int).
+        This is useful in multi-gpu training and can potentially reduce the number of paddings.
+        In general, it is set to the number of gpus.
     bucket_scheme : BucketScheme, default ConstWidthBucket
         It is used to generate bucket keys. It supports:
         ConstWidthBucket: all the buckets have the same width
@@ -317,7 +323,7 @@ class FixedBucketSampler(Sampler):
       batch_size=[44, 20, 13, 10, 8, 8, 8, 8, 8, 8]
     """
     def __init__(self, lengths, batch_size, num_buckets=10, bucket_keys=None,
-                 ratio=0, shuffle=False, use_average_length=False,
+                 ratio=0, shuffle=False, use_average_length=False, num_shards=1,
                  bucket_scheme=ConstWidthBucket()):
         assert len(lengths) > 0, 'FixedBucketSampler does not support empty lengths.'
         assert batch_size > 0, 'Batch size must be larger than 0.'
@@ -335,6 +341,7 @@ class FixedBucketSampler(Sampler):
             self._single_element = False
             attr_num = self._lengths.shape[1]
         self._shuffle = shuffle
+        self._num_shards = num_shards
         self._bucket_scheme = bucket_scheme
         max_lengths = self._lengths.max(axis=0)
         min_lengths = self._lengths.min(axis=0)
@@ -392,18 +399,39 @@ class FixedBucketSampler(Sampler):
             for i in range(0, len(sample_ids), bucket_batch_size):
                 self._batch_infos.append((bucket_id, i))
 
+        if self._num_shards > 0:
+            self._sampler_size = int(math.ceil(len(self._batch_infos) / float(self._num_shards)))
+        else:
+            self._sampler_size = len(self._batch_infos)
+
     def __iter__(self):
         if self._shuffle:
             np.random.shuffle(self._batch_infos)
             for bucket_id in range(len(self._bucket_keys)):
                 np.random.shuffle(self._bucket_sample_ids[bucket_id])
-        for bucket_id, batch_begin in self._batch_infos:
-            batch_size = self._bucket_batch_sizes[bucket_id]
-            batch_end = min(batch_begin + batch_size, len(self._bucket_sample_ids[bucket_id]))
-            yield self._bucket_sample_ids[bucket_id][batch_begin:batch_end]
+
+        if self._num_shards > 0:
+            for batch_idx in range(0, len(self._batch_infos), self._num_shards):
+                batch = self._batch_infos[batch_idx: batch_idx + self._num_shards]
+                bucket_ids, batch_begins = list(zip(*batch))
+                batch_sizes = [self._bucket_batch_sizes[bucket_id] for bucket_id in bucket_ids]
+                batch_ends = [min(batch_begin + batch_size,
+                                  len(self._bucket_sample_ids[bucket_id]))
+                              for bucket_id, batch_begin, batch_size in zip(bucket_ids,
+                                                                            batch_begins,
+                                                                            batch_sizes)]
+                yield [self._bucket_sample_ids[bucket_id][batch_begin:batch_end]
+                       for bucket_id, batch_begin, batch_end in zip(bucket_ids,
+                                                                    batch_begins,
+                                                                    batch_ends)]
+        else:
+            for bucket_id, batch_begin in self._batch_infos:
+                batch_size = self._bucket_batch_sizes[bucket_id]
+                batch_end = min(batch_begin + batch_size, len(self._bucket_sample_ids[bucket_id]))
+                yield self._bucket_sample_ids[bucket_id][batch_begin:batch_end]
 
     def __len__(self):
-        return len(self._batch_infos)
+        return self._sampler_size
 
     def stats(self):
         """Return a string representing the statistics of the bucketing sampler.
