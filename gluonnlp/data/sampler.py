@@ -69,14 +69,18 @@ def _match_bucket_keys(bucket_keys, seq_lengths):
     return bucket_sample_ids
 
 
-def _bucket_average_lengths(bucket_sample_ids, seq_lengths):
+def _bucket_stats(bucket_sample_ids, seq_lengths):
     bucket_average_lengths = []
+    bucket_length_stds = []
     for sample_ids in bucket_sample_ids:
         if len(sample_ids) > 0:
-            bucket_average_lengths.append(np.mean(seq_lengths[sample_ids]))
+            lengths = seq_lengths[sample_ids]
+            bucket_average_lengths.append(np.mean(lengths))
+            bucket_length_stds.append(np.std(lengths))
         else:
             bucket_average_lengths.append(0)
-    return bucket_average_lengths
+            bucket_length_stds.append(0)
+    return (bucket_average_lengths, bucket_length_stds)
 
 
 class BucketScheme(object):
@@ -388,9 +392,9 @@ class FixedBucketSampler(Sampler):
         else:
             if ratio > 0.:
                 warnings.warn('ratio=%f is ignored when use_average_length is True' % self._ratio)
-            bucket_average_lengths = _bucket_average_lengths(self._bucket_sample_ids, self._lengths)
-            self._bucket_batch_sizes = [max(int(batch_size / float(average_length)), 1)
-                                        for average_length in bucket_average_lengths]
+            bucket_average_lengths, bucket_length_stds = _bucket_stats(self._bucket_sample_ids, self._lengths)
+            self._bucket_batch_sizes = [max(int(batch_size / (average_length + length_std)), 1)
+                                        for average_length, length_std in zip(bucket_average_lengths, bucket_length_stds)]
         self._batch_infos = []
         for bucket_id, sample_ids, bucket_batch_size in\
                 zip(range(len(self._bucket_keys) - 1, -1, -1),
