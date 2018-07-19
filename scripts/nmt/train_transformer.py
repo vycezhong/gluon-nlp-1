@@ -345,10 +345,10 @@ static_alloc = True
 model.hybridize(static_alloc=static_alloc)
 logging.info(model)
 
-translator = BeamSearchTranslator(model=model, beam_size=args.beam_size,
-                                  scorer=BeamSearchScorer(alpha=args.lp_alpha,
-                                                          K=args.lp_k),
-                                  max_length=200)
+translators = [BeamSearchTranslator(model=model, beam_size=args.beam_size,
+                                    scorer=BeamSearchScorer(alpha=args.lp_alpha,
+                                                            K=args.lp_k),
+                                    max_length=200) for _ in range(len(ctx))]
 logging.info('Use beam_size={}, alpha={}, K={}'.format(args.beam_size, args.lp_alpha, args.lp_k))
 
 label_smoothing = LabelSmoothing(epsilon=args.epsilon, units=len(tgt_vocab))
@@ -390,7 +390,8 @@ def evaluate(data_loader):
         loss = 0
         seqs = [[seq.as_in_context(context) for seq in shard]
                 for context, shard in zip(ctx, seqs)]
-        for src_seq, tgt_seq, src_valid_length, tgt_valid_length, inst_ids in seqs:
+        for seq, translator in zip(seqs, translators):
+            src_seq, tgt_seq, src_valid_length, tgt_valid_length, inst_ids = seq
             out, _ = model(src_seq, tgt_seq[:, :-1],
                            src_valid_length, tgt_valid_length - 1)
             ls = test_loss_function(out, tgt_seq[:, 1:], tgt_valid_length - 1).sum()
