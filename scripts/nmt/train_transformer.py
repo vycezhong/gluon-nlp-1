@@ -276,6 +276,9 @@ def load_translation_data(dataset, src_lang='en', tgt_lang='vi'):
             val_text = WMT2014('newstest2013', src_lang=src_lang, tgt_lang=tgt_lang)
             test_text = WMT2014('newstest2014', src_lang=src_lang, tgt_lang=tgt_lang,
                                 full=args.full)
+        elif dataset == 'IWSLT2015':
+            val_text = data_val
+            test_text = data_test
         else:
             raise NotImplementedError
         val_tgt_sentences = list(val_text.transform(fetch_tgt_sentence))
@@ -462,6 +465,7 @@ def train():
                                            ratio=args.bucket_ratio,
                                            shuffle=False,
                                            use_average_length=True,
+                                           num_shards=len(ctx),
                                            bucket_scheme=bucket_scheme)
     logging.info('Valid Batch Sampler:\n{}'.format(val_batch_sampler.stats()))
     val_data_loader = ShardedDataLoader(data_val,
@@ -474,6 +478,7 @@ def train():
                                             ratio=args.bucket_ratio,
                                             shuffle=False,
                                             use_average_length=True,
+                                            num_shards=len(ctx),
                                             bucket_scheme=bucket_scheme)
     logging.info('Test Batch Sampler:\n{}'.format(test_batch_sampler.stats()))
     test_data_loader = ShardedDataLoader(data_test,
@@ -500,6 +505,10 @@ def train():
     average_start = (len(train_data_loader) // grad_interval) * (args.epochs - args.average_start)
     average_param_dict = None
     model.collect_params().zero_grad()
+    valid_loss, valid_translation_out = evaluate(val_data_loader)
+    valid_bleu_score, _, _, _, _ = compute_bleu([val_tgt_sentences], valid_translation_out,
+                                                tokenized=tokenized, tokenizer=args.bleu, bpe=bpe,
+                                                split_compound_word=split_compound_word)
     for epoch_id in range(args.epochs):
         log_avg_loss = 0
         log_wc = 0
