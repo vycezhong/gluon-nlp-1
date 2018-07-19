@@ -360,7 +360,7 @@ test_loss_function.hybridize(static_alloc=static_alloc)
 detokenizer = NLTKMosesDetokenizer()
 
 
-def evaluate(data_loader, context=ctx[0]):
+def evaluate(data_loader):
     """Evaluate given the data loader
 
     Parameters
@@ -376,30 +376,34 @@ def evaluate(data_loader, context=ctx[0]):
     """
     translation_out = []
     all_inst_ids = []
-    avg_loss_denom = 0
-    avg_loss = 0.0
-    for _, (src_seq, tgt_seq, src_valid_length, tgt_valid_length, inst_ids) \
+    loss_denom = 0
+    total_loss = 0.0
+    for batch_id, seqs \
             in enumerate(data_loader):
-        src_seq = src_seq.as_in_context(context)
-        tgt_seq = tgt_seq.as_in_context(context)
-        src_valid_length = src_valid_length.as_in_context(context)
-        tgt_valid_length = tgt_valid_length.as_in_context(context)
-        # Calculating Loss
-        out, _ = model(src_seq, tgt_seq[:, :-1], src_valid_length, tgt_valid_length - 1)
-        loss = test_loss_function(out, tgt_seq[:, 1:], tgt_valid_length - 1).mean().asscalar()
-        all_inst_ids.extend(inst_ids.asnumpy().astype(np.int32).tolist())
-        avg_loss += loss * (tgt_seq.shape[1] - 1)
-        avg_loss_denom += (tgt_seq.shape[1] - 1)
-        # Translate
-        samples, _, sample_valid_length = \
-            translator.translate(src_seq=src_seq, src_valid_length=src_valid_length)
-        max_score_sample = samples[:, 0, :].asnumpy()
-        sample_valid_length = sample_valid_length[:, 0].asnumpy()
-        for i in range(max_score_sample.shape[0]):
-            translation_out.append(
-                [tgt_vocab.idx_to_token[ele] for ele in
-                 max_score_sample[i][1:(sample_valid_length[i] - 1)]])
-    avg_loss = avg_loss / avg_loss_denom
+        tgt_wc, bs = np.sum([(shard[3].sum(), shard[0].shape[0])
+                             for shard in seqs], axis=0)
+        tgt_wc = tgt_wc.asscalar()
+        loss_denom += tgt_wc - bs
+        loss = 0
+        seqs = [[seq.as_in_context(context) for seq in shard]
+                for context, shard in zip(ctx, seqs)]
+        for src_seq, tgt_seq, src_valid_length, tgt_valid_length, inst_ids in seqs:
+            out, _ = model(src_seq, tgt_seq[:, :-1],
+                           src_valid_length, tgt_valid_length - 1)
+            ls = test_loss_function(out, tgt_seq[:, 1:], tgt_valid_length - 1).sum()
+            loss += (ls * (tgt_seq.shape[1] - 1))
+            # Translate
+            samples, _, sample_valid_length = \
+                translator.translate(src_seq=src_seq, src_valid_length=src_valid_length)
+            all_inst_ids.extend(inst_ids.asnumpy().astype(np.int32).tolist())
+            max_score_sample = samples[:, 0, :].asnumpy()
+            sample_valid_length = sample_valid_length[:, 0].asnumpy()
+            for i in range(max_score_sample.shape[0]):
+                translation_out.append(
+                    [tgt_vocab.idx_to_token[ele] for ele in
+                     max_score_sample[i][1:(sample_valid_length[i] - 1)]])
+        total_loss += loss
+    avg_loss = total_loss / loss_denom
     real_translation_out = [None for _ in range(len(all_inst_ids))]
     for ind, sentence in zip(all_inst_ids, translation_out):
         if args.bleu == 'tweaked':
@@ -460,10 +464,10 @@ def train():
                                            use_average_length=True,
                                            bucket_scheme=bucket_scheme)
     logging.info('Valid Batch Sampler:\n{}'.format(val_batch_sampler.stats()))
-    val_data_loader = DataLoader(data_val,
-                                 batch_sampler=val_batch_sampler,
-                                 batchify_fn=test_batchify_fn,
-                                 num_workers=8)
+    val_data_loader = ShardedDataLoader(data_val,
+                                        batch_sampler=val_batch_sampler,
+                                        batchify_fn=test_batchify_fn,
+                                        num_workers=8)
     test_batch_sampler = FixedBucketSampler(lengths=target_test_lengths,
                                             batch_size=args.test_batch_size,
                                             num_buckets=args.num_buckets,
@@ -472,10 +476,10 @@ def train():
                                             use_average_length=True,
                                             bucket_scheme=bucket_scheme)
     logging.info('Test Batch Sampler:\n{}'.format(test_batch_sampler.stats()))
-    test_data_loader = DataLoader(data_test,
-                                  batch_sampler=test_batch_sampler,
-                                  batchify_fn=test_batchify_fn,
-                                  num_workers=8)
+    test_data_loader = ShardedDataLoader(data_test,
+                                         batch_sampler=test_batch_sampler,
+                                         batchify_fn=test_batchify_fn,
+                                         num_workers=8)
 
     if args.bleu == 'tweaked':
         bpe = True
@@ -557,14 +561,14 @@ def train():
                 log_avg_loss = 0
                 log_wc = 0
         mx.nd.waitall()
-        valid_loss, valid_translation_out = evaluate(val_data_loader, ctx[0])
+        valid_loss, valid_translation_out = evaluate(val_data_loader)
         valid_bleu_score, _, _, _, _ = compute_bleu([val_tgt_sentences], valid_translation_out,
                                                     tokenized=tokenized, tokenizer=args.bleu,
                                                     split_compound_word=split_compound_word,
                                                     bpe=bpe)
         logging.info('[Epoch {}] valid Loss={:.4f}, valid ppl={:.4f}, valid bleu={:.2f}'
                      .format(epoch_id, valid_loss, np.exp(valid_loss), valid_bleu_score * 100))
-        test_loss, test_translation_out = evaluate(test_data_loader, ctx[0])
+        test_loss, test_translation_out = evaluate(test_data_loader)
         test_bleu_score, _, _, _, _ = compute_bleu([test_tgt_sentences], test_translation_out,
                                                    tokenized=tokenized, tokenizer=args.bleu,
                                                    split_compound_word=split_compound_word,
@@ -597,13 +601,13 @@ def train():
             v.set_data(average_param_dict[k])
     else:
         model.load_params(os.path.join(args.save_dir, 'valid_best.params'), ctx)
-    valid_loss, valid_translation_out = evaluate(val_data_loader, ctx[0])
+    valid_loss, valid_translation_out = evaluate(val_data_loader)
     valid_bleu_score, _, _, _, _ = compute_bleu([val_tgt_sentences], valid_translation_out,
                                                 tokenized=tokenized, tokenizer=args.bleu, bpe=bpe,
                                                 split_compound_word=split_compound_word)
     logging.info('Best model valid Loss={:.4f}, valid ppl={:.4f}, valid bleu={:.2f}'
                  .format(valid_loss, np.exp(valid_loss), valid_bleu_score * 100))
-    test_loss, test_translation_out = evaluate(test_data_loader, ctx[0])
+    test_loss, test_translation_out = evaluate(test_data_loader)
     test_bleu_score, _, _, _, _ = compute_bleu([test_tgt_sentences], test_translation_out,
                                                tokenized=tokenized, tokenizer=args.bleu, bpe=bpe,
                                                split_compound_word=split_compound_word)
