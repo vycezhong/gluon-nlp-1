@@ -262,8 +262,7 @@ encoder, decoder = get_parallel_gnmt_encoder_decoder(hidden_size=args.num_hidden
                                                      num_layers=args.num_layers,
                                                      num_bottom_layers=args.num_bottom_layers,
                                                      num_states=args.num_states,
-                                                     num_bi_layers=args.num_bi_layers,
-                                                     scaled=args.scaled)
+                                                     num_bi_layers=args.num_bi_layers)
 model = NMTModel(src_vocab=src_vocab, tgt_vocab=tgt_vocab, encoder=encoder, decoder=decoder,
                  embed_size=args.num_hidden, prefix='parallel_gnmt_')
 model.initialize(init=mx.init.Uniform(args.initial_w), ctx=ctx)
@@ -309,7 +308,7 @@ def evaluate(data_loader):
         tgt_valid_length = tgt_valid_length.as_in_context(ctx)
         # Calculating Loss
         out, additional_out = model(src_seq, tgt_seq[:, :-1], src_valid_length, tgt_valid_length - 1)
-        loss = loss_function(out, additional_out[0], tgt_seq[:, 1:], tgt_valid_length - 1).mean().asscalar()
+        loss = loss_function(out, additional_out[1][0], tgt_seq[:, 1:], tgt_valid_length - 1).mean().asscalar()
         all_inst_ids.extend(inst_ids.asnumpy().astype(np.int32).tolist())
         avg_loss += loss * (tgt_seq.shape[1] - 1)
         avg_loss_denom += (tgt_seq.shape[1] - 1)
@@ -396,7 +395,7 @@ def train():
             tgt_valid_length = tgt_valid_length.as_in_context(ctx)
             with mx.autograd.record():
                 out, additional_out = model(src_seq, tgt_seq[:, :-1], src_valid_length, tgt_valid_length - 1)
-                loss = loss_function(out, additional_out[0], tgt_seq[:, 1:], tgt_valid_length - 1).mean()
+                loss = loss_function(out, additional_out[1][0], tgt_seq[:, 1:], tgt_valid_length - 1).mean()
                 loss = loss * (tgt_seq.shape[1] - 1) / (tgt_valid_length - 1).mean()
                 loss.backward()
             grads = [p.grad(ctx) for p in model.collect_params().values()]

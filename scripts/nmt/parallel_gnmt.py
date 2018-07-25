@@ -166,10 +166,9 @@ class ParallelGNMTEncoder(Seq2SeqEncoder):
             if i == self._num_bottom_layers:
                 transition_out = self.transition_cell(inputs)
                 transition_out = self.dropout_layer(transition_out)
-                if self._use_residual:
-                    inputs = self.residual_proj(inputs)
-                    inputs = mx.nd.expand_dims(inputs, 2)
-                    inputs = self.layer_norm(transition_out.reshape(shape=(0, 0, -4, self._num_states, -1)) + inputs)
+                inputs = self.residual_proj(inputs)
+                inputs = mx.nd.expand_dims(inputs, 2)
+                inputs = self.layer_norm(transition_out.reshape(shape=(0, 0, -4, self._num_states, -1)) + inputs)
                 inputs = inputs.transpose(axes=(0, 2, 1, 3)).reshape(shape=(-3, 0, 0))
                 if valid_length is not None:
                     valid_length = mx.nd.broadcast_to(mx.nd.expand_dims(valid_length, -1),
@@ -197,7 +196,7 @@ class ParallelGNMTEncoder(Seq2SeqEncoder):
             outputs = mx.nd.SequenceMask(outputs, sequence_length=valid_length,
                                          use_sequence_length=True, axis=1)
         outputs = outputs.reshape(shape=(-4, -1, self._num_states, -2))
-        return [outputs, new_states]
+        return [outputs, new_states], []
 
 
 class ParallelGNMTDecoder(HybridBlock, Seq2SeqDecoder):
@@ -446,11 +445,10 @@ class ParallelGNMTDecoder(HybridBlock, Seq2SeqDecoder):
                 curr_input = rnn_out
                 rnn_out = self.transition_cell(curr_input)
                 rnn_out = self.dropout_layer(rnn_out)
-                if self._use_residual:
-                    rnn_out = rnn_out.reshape(shape=(0, -4, self._num_states, -1))
-                    curr_input = self.residual_proj(curr_input)
-                    curr_input = F.expand_dims(curr_input, 1).broadcast_axes(axis=1, size=self._num_states)
-                    rnn_out = self.layer_norm(rnn_out + curr_input)
+                rnn_out = rnn_out.reshape(shape=(0, -4, self._num_states, -1))
+                curr_input = self.residual_proj(curr_input)
+                curr_input = F.expand_dims(curr_input, 1).broadcast_axes(axis=1, size=self._num_states)
+                rnn_out = self.layer_norm(rnn_out + curr_input)
                 # Shape(batch_size * num_states, round(hidden_size / scale))
                 rnn_out = rnn_out.reshape(shape=(-3, 0))
                 # Shape(batch_size * num_states, round(hidden_size / scale))
@@ -479,7 +477,7 @@ class ParallelGNMTDecoder(HybridBlock, Seq2SeqDecoder):
 
 def get_parallel_gnmt_encoder_decoder(cell_type='lstm', attention_cell='multi_memory', num_layers=2,
                                       num_bottom_layers=1, num_states=4, num_bi_layers=1, scaled=True,
-                                      hidden_size=128, dropout=0.0, use_residual=False,
+                                      hidden_size=128, dropout=0.0, use_residual=True,
                                       i2h_weight_initializer=None, h2h_weight_initializer=None,
                                       i2h_bias_initializer=mx.init.LSTMBias(forget_bias=1.0),
                                       h2h_bias_initializer='zeros',
