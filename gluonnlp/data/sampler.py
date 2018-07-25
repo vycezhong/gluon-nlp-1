@@ -419,6 +419,8 @@ class FixedBucketSampler(Sampler):
 
         if self._num_shards > 0:
             for batch_idx in range(0, len(self._batch_infos), self._num_shards):
+                if batch_idx + self._num_shards > len(self._batch_infos):
+                    batch_idx = len(self._batch_infos) - self._num_shards
                 batch = self._batch_infos[batch_idx: batch_idx + self._num_shards]
                 bucket_ids, batch_begins = list(zip(*batch))
                 batch_sizes = [self._bucket_batch_sizes[bucket_id] for bucket_id in bucket_ids]
