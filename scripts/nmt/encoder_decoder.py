@@ -24,7 +24,7 @@ import mxnet as mx
 from mxnet.gluon import rnn
 from mxnet.gluon.block import Block
 from gluonnlp.model import AttentionCell, MLPAttentionCell, DotProductAttentionCell, \
-    MultiHeadAttentionCell
+    MultiHeadAttentionCell, MultiMemoryAttentionCell
 
 
 def _list_bcast_where(F, mask, new_val_l, old_val_l):
@@ -74,6 +74,7 @@ def _get_cell_type(cell_type):
 
 def _get_attention_cell(attention_cell, units=None,
                         scaled=True, num_heads=None,
+                        num_memories=None,
                         use_bias=False, dropout=0.0):
     """
 
@@ -107,6 +108,10 @@ def _get_attention_cell(attention_cell, units=None,
             base_cell = DotProductAttentionCell(scaled=scaled, dropout=dropout)
             return MultiHeadAttentionCell(base_cell=base_cell, query_units=units, use_bias=use_bias,
                                           key_units=units, value_units=units, num_heads=num_heads)
+        elif attention_cell == 'multi_memory':
+            base_cell = DotProductAttentionCell(scaled=scaled, dropout=dropout)
+            return MultiMemoryAttentionCell(base_cell=base_cell, query_units=units, use_bias=use_bias,
+                                            num_memories=num_memories)
         else:
             raise NotImplementedError
     else:
@@ -141,6 +146,63 @@ def _nested_sequence_last(data, valid_length):
         for i in range(len(data[0])):
             ret.append(_nested_sequence_last([ele[i] for ele in data], valid_length))
         return ret
+    else:
+        raise NotImplementedError
+
+
+def _expand_size(data, num_states):
+    """Tile all the states to have shape (batch_size, num_states, ...)
+
+    Parameters
+    ----------
+    data : A single NDArray or nested container with NDArrays
+        Each NDArray should have shape (batch_size, ...)
+    num_states : int
+    Returns
+    -------
+    new_states : Object that contains NDArrays
+        Each NDArray should have shape (batch_size * num_states, ...)
+    """
+    if isinstance(data, list):
+        return [_expand_size(ele, num_states) for ele in data]
+    elif isinstance(data, tuple):
+        return tuple(_expand_size(ele, num_states) for ele in data)
+    elif isinstance(data, dict):
+        return {k: _expand_size(v, num_states) for k, v in data.items()}
+    elif isinstance(data, mx.nd.NDArray):
+        batch_size = data.shape[0]
+        return data.reshape((batch_size, 1) + data.shape[1:])\
+                   .broadcast_axes(axis=1, size=num_states)
+    else:
+        raise NotImplementedError
+
+
+def _reshape_size(data, num_states, action='convert_to_batch'):
+    """Convert between (batch_size * num_states, ...) and (batch_size, num_states, ...)
+
+        Parameters
+        ----------
+        data : A single NDArray or nested container with NDArrays
+            Each NDArray should have shape (batch_size * num_states, ...) or (batch_size, num_states, ...)
+        num_states : int
+        Returns
+        -------
+        new_states : Object that contains NDArrays
+            Each NDArray should have shape (batch_size * num_states, ...) or (batch_size, num_states, ...)
+        """
+    if isinstance(data, list):
+        return [_reshape_size(ele, num_states, action) for ele in data]
+    elif isinstance(data, tuple):
+        return tuple(_reshape_size(ele, num_states, action) for ele in data)
+    elif isinstance(data, dict):
+        return {k: _reshape_size(v, num_states, action) for k, v in data.items()}
+    elif isinstance(data, (mx.nd.NDArray, mx.sym.Symbol)):
+        if action == 'convert_to_batch':
+            return data.reshape((-3, -2))
+        elif action == 'convert_to_tensor':
+            return data.reshape((-4, -1, num_states, -2))
+        else:
+            raise NotImplementedError
     else:
         raise NotImplementedError
 
