@@ -20,7 +20,8 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
-__all__ = ['AttentionCell', 'MultiHeadAttentionCell', 'MLPAttentionCell', 'DotProductAttentionCell']
+__all__ = ['AttentionCell', 'MultiHeadAttentionCell', 'MLPAttentionCell', 'DotProductAttentionCell',
+           'MultiMemoryAttentionCell']
 
 import math
 import mxnet as mx
@@ -464,3 +465,91 @@ class DotProductAttentionCell(AttentionCell):
         att_score = F.batch_dot(query, key, transpose_b=True)
         att_weights = self._dropout_layer(_masked_softmax(F, att_score, mask))
         return att_weights
+
+
+class MultiMemoryAttentionCell(AttentionCell):
+    r"""Multi-memory Attention Cell.
+
+    Parameters
+    ----------
+    base_cell : AttentionCell
+    query_units : int
+        Total number of projected units for query. Must be divided exactly by num_memories.
+    num_memories : int
+        Number of parallel attention memories
+    use_bias : bool, default True
+        Whether to use bias when projecting the query/key/values
+    weight_initializer : str or `Initializer` or None, default None
+        Initializer of the weights.
+    bias_initializer : str or `Initializer`, default 'zeros'
+        Initializer of the bias.
+    prefix : str or None, default None
+        See document of `Block`.
+    params : str or None, default None
+        See document of `Block`.
+    """
+    def __init__(self, base_cell, query_units, num_memories, use_bias=True,
+                 weight_initializer=None, bias_initializer='zeros', prefix=None, params=None):
+        super(MultiMemoryAttentionCell, self).__init__(prefix=prefix, params=params)
+        self._base_cell = base_cell
+        self._query_units = query_units
+        self._num_memories = num_memories
+        self._use_bias = use_bias
+        if self._query_units % self._num_memories != 0:
+            raise ValueError('In MultiMemoryAttetion, the query_units should be divided exactly'
+                             ' by the number of memories. Received query_units={}, num_memories={}'
+                             .format(query_units, num_memories))
+        with self.name_scope():
+            self.proj_query = nn.Dense(units=self._query_units, use_bias=self._use_bias,
+                                       flatten=False, weight_initializer=weight_initializer,
+                                       bias_initializer=bias_initializer, prefix='query_')
+
+    def __call__(self, query, key, value=None, mask=None):
+        """Compute the attention.
+
+        Parameters
+        ----------
+        query : Symbol or NDArray
+            Query vector. Shape (batch_size, query_length, query_dim)
+        key : Symbol or NDArray
+            Key of the memory. Shape (batch_size, num_memories, memory_length, key_dim)
+        value : Symbol or NDArray or None, default None
+            Value of the memory. If set to None, the value will be set as the key.
+            Shape (batch_size, num_memories, memory_length, value_dim)
+        mask : Symbol or NDArray or None, default None
+            Mask of the memory slots. Shape (batch_size, query_length, memory_length)
+            Only contains 0 or 1 where 0 means that the memory slot will not be used.
+            If set to None. No mask will be used.
+
+        Returns
+        -------
+        context_vec : Symbol or NDArray
+            Shape (batch_size, query_length, context_vec_dim)
+        att_weights : Symbol or NDArray
+            Attention weights of multiple heads.
+            Shape (batch_size, num_memories, query_length, memory_length)
+        """
+        return self.forward(query, key, value, mask)
+
+    def _compute_weight(self, F, query, key, mask=None):
+        query = self.proj_query(query)  # Shape (batch_size, query_length, query_units)
+        # Shape (batch_size * num_memories, query_length, ele_units)
+        query = F.transpose(query.reshape(shape=(0, 0, self._num_memories, -1)),
+                            axes=(0, 2, 1, 3))\
+                 .reshape(shape=(-1, 0, 0), reverse=True)
+        key = key.reshape(shape=(-3, -2))
+        if mask is not None:
+            mask = F.broadcast_axis(F.expand_dims(mask, axis=1),
+                                    axis=1, size=self._num_memories)\
+                    .reshape(shape=(-1, 0, 0), reverse=True)
+        att_weights = self._base_cell._compute_weight(F, query, key, mask)
+        return att_weights.reshape(shape=(-1, self._num_memories, 0, 0), reverse=True)
+
+    def _read_by_weight(self, F, att_weights, value):
+        att_weights = att_weights.reshape(shape=(-1, 0, 0), reverse=True)
+        value = value.reshape(shape=(-3, -2))
+        context_vec = self._base_cell._read_by_weight(F, att_weights, value)
+        context_vec = F.transpose(context_vec.reshape(shape=(-1, self._num_memories, 0, 0),
+                                                      reverse=True),
+                                  axes=(0, 2, 1, 3)).reshape(shape=(0, 0, -1))
+        return context_vec

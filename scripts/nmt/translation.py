@@ -19,7 +19,7 @@
 """Machine translation models and translators."""
 
 
-__all__ = ['NMTModel', 'BeamSearchTranslator']
+__all__ = ['NMTModel', 'BeamSearchTranslator', 'MixBeamSearchTranslator']
 
 import warnings
 import numpy as np
@@ -294,3 +294,32 @@ class BeamSearchTranslator(object):
                             val=self._model.tgt_vocab.token_to_idx[self._model.tgt_vocab.bos_token])
         samples, scores, sample_valid_length = self._sampler(inputs, decoder_states)
         return samples, scores, sample_valid_length
+
+
+class MixBeamSearchTranslator(BeamSearchTranslator):
+    """Mix Beam Search Translator
+    Parameters
+    ----------
+    model : NMTModel
+        The neural machine translation model
+    beam_size : int
+        Size of the beam
+    scorer : BeamSearchScorer
+        Score function used in beamsearch
+    max_length : int
+        The maximum decoding length
+    """
+
+    def __init__(self, model, beam_size=1, scorer=BeamSearchScorer(), max_length=100, num_mix=1):
+        super(MixBeamSearchTranslator, self).__init__(model=model, beam_size=beam_size,
+                                                      scorer=scorer, max_length=max_length)
+        self._num_mix = num_mix
+
+    def _decode_logprob(self, step_input, states):
+        out, states, additional_out = self._model.decode_step(step_input, states)
+        mix = additional_out[0]
+        mix = mx.nd.softmax(mix).reshape(shape=(-1, 1))
+        out[:] = mx.nd.softmax(out) * mix
+        out = out.reshape(shape=(-4, -1, self._num_mix, 0))
+        out = mx.nd.log(mx.nd.sum(out, axis=-2) + 1e-12)
+        return out, states

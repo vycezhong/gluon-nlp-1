@@ -21,7 +21,7 @@
 import numpy as np
 import mxnet as mx
 from mxnet.gluon import HybridBlock
-from mxnet.gluon.loss import SoftmaxCELoss
+from mxnet.gluon.loss import Loss, SoftmaxCELoss, _reshape_like, _apply_weighting
 
 
 class SoftmaxCEMaskedLoss(SoftmaxCELoss):
@@ -54,6 +54,58 @@ class SoftmaxCEMaskedLoss(SoftmaxCELoss):
                                        use_sequence_length=True,
                                        axis=1)
         return super(SoftmaxCEMaskedLoss, self).hybrid_forward(F, pred, label, sample_weight)
+
+
+class MixSoftmaxCEMaskedLoss(Loss):
+    """Wrapper of the Mixture SoftmaxCELoss that supports valid_length as the input
+    """
+
+    def __init__(self, axis=-1, sparse_label=True, from_logits=False, weight=None,
+                 batch_axis=0, num_mix=1, **kwargs):
+        super(MixSoftmaxCEMaskedLoss, self).__init__(weight, batch_axis, **kwargs)
+        self._axis = axis
+        self._sparse_label = sparse_label
+        self._from_logits = from_logits
+        self._num_mix = num_mix
+
+    def hybrid_forward(self, F, pred, mix, label, valid_length):
+        """
+        Parameters
+        ----------
+        F
+        pred : Symbol or NDArray
+            Shape (batch_size * num_states, length, V)
+        mix : Symbol or NDArray
+            Shape (batch_size, length, num_states)
+        label : Symbol or NDArray
+            Shape (batch_size, length)
+        valid_length : Symbol or NDArray
+            Shape (batch_size, )
+        Returns
+        -------
+        loss : Symbol or NDArray
+            Shape (batch_size,)
+        """
+        if not self._from_logits:
+            mix = F.transpose(F.softmax(mix, self._axis), axes=(0, 2, 1)).reshape(shape=(-3, 0))
+            pred = F.softmax(pred, self._axis)
+            pred = F.broadcast_mul(pred, F.expand_dims(mix, -1))
+            pred = pred.reshape(shape=(-4, -1, self._num_mix, 0, 0))
+            pred = F.log(F.sum(pred, axis=1) + 1e-12)
+        if self._sparse_label:
+            sample_weight = F.cast(F.expand_dims(F.ones_like(label), axis=-1), dtype=np.float32)
+            loss = -F.pick(pred, label, axis=self._axis, keepdims=True)
+        else:
+            sample_weight = F.ones_like(label)
+            label = _reshape_like(F, label, pred)
+            loss = -F.sum(pred * label, axis=self._axis, keepdims=True)
+        sample_weight = F.SequenceMask(sample_weight,
+                                       sequence_length=valid_length,
+                                       use_sequence_length=True,
+                                       axis=1)
+        loss = _apply_weighting(F, loss, self._weight, sample_weight)
+        return F.mean(loss, axis=self._batch_axis, exclude=True)
+
 
 # pylint: disable=unused-argument
 class _SmoothingWithDim(mx.operator.CustomOp):
