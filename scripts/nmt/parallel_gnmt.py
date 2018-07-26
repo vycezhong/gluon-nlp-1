@@ -274,7 +274,7 @@ class ParallelGNMTDecoder(HybridBlock, Seq2SeqDecoder):
                                     h2h_bias_initializer=h2h_bias_initializer,
                                     prefix='rnn%d_' % i))
             self.attention_cell = _get_attention_cell(attention_cell, units=hidden_units * self._num_states,
-                                                      num_memories=num_states, scaled=scaled)
+                                                      num_memories=num_states, scaled=scaled, use_bias=True)
             self.transition_cell = nn.Dense(units=hidden_units * self._num_states,
                                             flatten=True, activation='relu')
             # Construct mixture probability proj
@@ -503,7 +503,7 @@ def get_parallel_gnmt_encoder_decoder(cell_type='lstm', attention_cell='multi_me
     prefix :
     params :
 
-    Returns
+    Returns:
     -------
     encoder : GNMTEncoder
     decoder : ParallelGNMTDecoder

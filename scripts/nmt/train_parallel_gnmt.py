@@ -262,7 +262,7 @@ encoder, decoder = get_parallel_gnmt_encoder_decoder(hidden_size=args.num_hidden
                                                      num_layers=args.num_layers,
                                                      num_bottom_layers=args.num_bottom_layers,
                                                      num_states=args.num_states,
-                                                     num_bi_layers=args.num_bi_layers)
+                                                     num_bi_layers=args.num_bi_layers, i2h_bias_initializer='zeros')
 model = NMTModel(src_vocab=src_vocab, tgt_vocab=tgt_vocab, encoder=encoder, decoder=decoder,
                  embed_size=args.num_hidden, prefix='parallel_gnmt_')
 model.initialize(init=mx.init.Uniform(args.initial_w), ctx=ctx)
@@ -437,7 +437,8 @@ def train():
             save_path = os.path.join(args.save_dir, 'valid_best.params')
             logging.info('Save best parameters to {}'.format(save_path))
             model.save_params(save_path)
-        if epoch_id + 1 >= (args.epochs * 2) // 3:
+        else:
+        #if epoch_id + 1 >= (args.epochs * 2) // 3:
             new_lr = trainer.learning_rate * args.lr_update_factor
             logging.info('Learning rate change to {}'.format(new_lr))
             trainer.set_learning_rate(new_lr)
