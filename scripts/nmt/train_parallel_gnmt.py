@@ -71,13 +71,13 @@ parser.add_argument('--num_hidden', type=int, default=128, help='Dimension of th
                                                                 'vectors and states.')
 parser.add_argument('--dropout', type=float, default=0.2,
                     help='dropout applied to layers (0 = no dropout)')
-parser.add_argument('--num_layers', type=int, default=2, help='number of layers in the encoder'
+parser.add_argument('--num_layers', type=int, default=3, help='number of layers in the encoder'
                                                               ' and decoder')
 parser.add_argument('--num_bi_layers', type=int, default=1,
                     help='number of bidirectional layers in the encoder and decoder')
-parser.add_argument('--num_bottom_layers', type=int, default=1,
+parser.add_argument('--num_bottom_layers', type=int, default=2,
                     help='number of bottom layers before transition to mulitple states')
-parser.add_argument('--num_states', type=int, default=1,
+parser.add_argument('--num_states', type=int, default=4,
                     help='number of states')
 parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
 parser.add_argument('--beam_size', type=int, default=4, help='Beam size')
@@ -220,7 +220,7 @@ def load_translation_data(dataset, src_lang='en', tgt_lang='vi'):
     if not data_test_processed:
         data_test_processed = process_dataset(data_test, src_vocab, tgt_vocab)
         cache_dataset(data_test_processed, common_prefix + '_test')
-    fetch_tgt_sentence = lambda src, tgt: tgt.split()
+    fetch_tgt_sentence = lambda src, tgt: tgt.split()[:50]
     val_tgt_sentences = list(data_val.transform(fetch_tgt_sentence))
     test_tgt_sentences = list(data_test.transform(fetch_tgt_sentence))
     return data_train_processed, data_val_processed, data_test_processed, \
@@ -262,7 +262,8 @@ encoder, decoder = get_parallel_gnmt_encoder_decoder(hidden_size=args.num_hidden
                                                      num_layers=args.num_layers,
                                                      num_bottom_layers=args.num_bottom_layers,
                                                      num_states=args.num_states,
-                                                     num_bi_layers=args.num_bi_layers, i2h_bias_initializer='zeros')
+                                                     num_bi_layers=args.num_bi_layers,
+                                                     i2h_bias_initializer='zeros')
 model = NMTModel(src_vocab=src_vocab, tgt_vocab=tgt_vocab, encoder=encoder, decoder=decoder,
                  embed_size=args.num_hidden, prefix='parallel_gnmt_')
 model.initialize(init=mx.init.Uniform(args.initial_w), ctx=ctx)
@@ -273,7 +274,7 @@ logging.info(model)
 translator = MixBeamSearchTranslator(model=model, beam_size=args.beam_size,
                                      scorer=BeamSearchScorer(alpha=args.lp_alpha,
                                                              K=args.lp_k),
-                                     max_length=args.tgt_max_len + 100,
+                                     max_length=args.tgt_max_len,
                                      num_mix=args.num_states)
 logging.info('Use beam_size={}, alpha={}, K={}'.format(args.beam_size, args.lp_alpha, args.lp_k))
 
@@ -400,6 +401,7 @@ def train():
                 loss.backward()
             grads = [p.grad(ctx) for p in model.collect_params().values()]
             gnorm = gluon.utils.clip_global_norm(grads, args.clip)
+            #gnorm = 0
             trainer.step(1)
             src_wc = src_valid_length.sum().asscalar()
             tgt_wc = (tgt_valid_length - 1).sum().asscalar()
