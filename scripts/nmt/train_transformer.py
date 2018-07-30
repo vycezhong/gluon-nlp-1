@@ -83,7 +83,7 @@ parser.add_argument('--num_heads', type=int, default=8,
                     help='number of heads in multi-head attention')
 parser.add_argument('--scaled', action='store_true', help='Turn on to use scale in attention')
 parser.add_argument('--batch_size', type=int, default=1024,
-                    help='Batch size. Number of tokens in a minibatch')
+                    help='Batch size. Number of tokens per gpu in a minibatch')
 parser.add_argument('--beam_size', type=int, default=4, help='Beam size')
 parser.add_argument('--lp_alpha', type=float, default=0.6,
                     help='Alpha used in calculating the length penalty')
