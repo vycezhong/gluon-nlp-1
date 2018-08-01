@@ -79,8 +79,10 @@ parser.add_argument('--epsilon', type=float, default=0.1,
                     help='epsilon parameter for label smoothing')
 parser.add_argument('--num_layers', type=int, default=6,
                     help='number of layers in the encoder and decoder')
-parser.add_argument('--num_heads', type=int, default=8,
-                    help='number of heads in multi-head attention')
+parser.add_argument('--num_bottom_layers', type=int, default=4,
+                    help='number of bottom layers before transition to mulitple states')
+parser.add_argument('--num_states', type=int, default=8,
+                    help='number of states')
 parser.add_argument('--scaled', action='store_true', help='Turn on to use scale in attention')
 parser.add_argument('--batch_size', type=int, default=1024,
                     help='Batch size. Number of tokens per gpu in a minibatch')
@@ -331,13 +333,13 @@ encoder, decoder = get_parallel_transformer_encoder_decoder(units=args.num_units
                                                             num_bottom_layers=args.num_bottom_layers,
                                                             dropout=args.dropout,
                                                             num_layers=args.num_layers,
-                                                            num_states=args.num_heads,
+                                                            num_states=args.num_states,
                                                             max_src_length=max(src_max_len, 500),
                                                             max_tgt_length=max(tgt_max_len, 500),
                                                             scaled=args.scaled)
 model = NMTModel(src_vocab=src_vocab, tgt_vocab=tgt_vocab, encoder=encoder, decoder=decoder,
                  embed_size=args.num_units, tie_weights=True, inner_units=args.num_units,
-                 in_units=(args.num_units // args.num_states), factorized=True,
+                 in_units=args.num_units // args.num_states, factorized=True,
                  embed_initializer=None, prefix='parallel_transformer_')
 model.initialize(init=mx.init.Xavier(magnitude=args.magnitude), ctx=ctx)
 static_alloc = True
