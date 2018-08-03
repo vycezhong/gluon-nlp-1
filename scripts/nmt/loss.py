@@ -56,6 +56,64 @@ class SoftmaxCEMaskedLoss(SoftmaxCELoss):
         return super(SoftmaxCEMaskedLoss, self).hybrid_forward(F, pred, label, sample_weight)
 
 
+class LogSumExpOp(mx.operator.CustomOp):
+    """Implementation of log sum exp for numerical stability
+    """
+    def __init__(self, axis):
+        self.axis = axis
+
+    def forward(self, is_train, req, in_data, out_data, aux):
+        x = in_data[0]
+        max_x = mx.nd.max_axis(x, axis=self.axis, keepdims=True)
+        sum_x = mx.nd.sum(mx.nd.exp(x - max_x), axis=self.axis, keepdims=True)
+        y = mx.nd.log(sum_x) + max_x
+        y = y.reshape(out_data[0].shape)
+        self.assign(out_data[0], req[0], y)
+
+    def backward(self, req, out_grad, in_data, out_data, in_grad, aux):
+        y = out_grad[0]
+        x = in_data[0]
+        max_x = mx.nd.max_axis(x, axis=self.axis, keepdims=True)
+        y = y.reshape(max_x.shape)
+        x = mx.nd.exp(x - max_x)
+        prob = x / mx.nd.sum(x, axis=self.axis, keepdims=True)
+        self.assign(in_grad[0], req[0], prob * y)
+
+
+@mx.operator.register("log_sum_exp")
+class LogSumExpProp(mx.operator.CustomOpProp):
+    def __init__(self, axis, keepdims=False):
+        super(LogSumExpProp, self).__init__(need_top_grad=True)
+        self.axis = int(axis)
+        self.keepdims = keepdims in ('True',)
+
+    def list_arguments(self):
+        return ['data']
+
+    def list_outputs(self):
+        return ['output']
+
+    def infer_shape(self, in_shape):
+        data_shape = in_shape[0]
+        oshape = []
+        for i, x in enumerate(data_shape):
+            if i == self.axis:
+                if self.keepdims:
+                    oshape.append(1)
+            else:
+                oshape.append(x)
+        return [data_shape], [tuple(oshape)], []
+
+    def create_operator(self, ctx, shapes, dtypes):
+        return LogSumExpOp(self.axis)
+
+
+def log_sum_exp(in_sym, axis, keepdims=False, name="log_sum_exp"):
+    return mx.symbol.Custom(in_sym, name=name,
+                            op_type="log_sum_exp",
+                            axis=axis, keepdims=keepdims)
+
+
 class MixSoftmaxCEMaskedLoss(Loss):
     """Wrapper of the Mixture SoftmaxCELoss that supports valid_length as the input
     """
@@ -87,11 +145,11 @@ class MixSoftmaxCEMaskedLoss(Loss):
             Shape (batch_size,)
         """
         if not self._from_logits:
-            mix = F.transpose(F.softmax(mix, self._axis), axes=(0, 2, 1)).reshape(shape=(-3, 0))
-            pred = F.softmax(pred, self._axis)
-            pred = F.broadcast_mul(pred, F.expand_dims(mix, -1))
+            mix = F.transpose(F.log_softmax(mix, self._axis), axes=(0, 2, 1)).reshape(shape=(-3, 0))
+            pred = F.log_softmax(pred, self._axis)
+            pred = F.broadcast_add(pred, F.expand_dims(mix, -1))
             pred = pred.reshape(shape=(-4, -1, self._num_mix, 0, 0))
-            pred = F.log(F.sum(pred, axis=1) + 1e-12)
+            pred = F.Custom(pred, op_type='log_sum_exp', axis=1)
         if self._sparse_label:
             sample_weight = F.cast(F.expand_dims(F.ones_like(label), axis=-1), dtype=np.float32)
             loss = -F.pick(pred, label, axis=self._axis, keepdims=True)
