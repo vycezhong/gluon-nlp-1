@@ -324,5 +324,5 @@ class MixBeamSearchTranslator(BeamSearchTranslator):
         #out = mx.nd.log(mx.nd.sum(out, axis=-2) + 1e-12)
         max_out = mx.nd.max_axis(out, 1, keepdims=True)
         sum_out = mx.nd.sum(mx.nd.exp(out - max_out), axis=1)
-        pred = mx.nd.log(sum_out) + max_out.squeeze(axis=1)
+        out = mx.nd.log(sum_out) + max_out.squeeze(axis=1)
         return out, states
