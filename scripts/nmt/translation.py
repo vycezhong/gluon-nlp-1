@@ -318,8 +318,11 @@ class MixBeamSearchTranslator(BeamSearchTranslator):
     def _decode_logprob(self, step_input, states):
         out, states, additional_out = self._model.decode_step(step_input, states)
         mix = additional_out[0]
-        mix = mx.nd.softmax(mix).reshape(shape=(-1, 1))
-        out[:] = mx.nd.softmax(out) * mix
+        mix = mx.nd.log_softmax(mix).reshape(shape=(-1, 1))
+        out[:] = mx.nd.log_softmax(out) + mix
         out = out.reshape(shape=(-4, -1, self._num_mix, 0))
-        out = mx.nd.log(mx.nd.sum(out, axis=-2) + 1e-12)
+        #out = mx.nd.log(mx.nd.sum(out, axis=-2) + 1e-12)
+        max_out = mx.nd.max_axis(out, 1, keepdims=True)
+        sum_out = mx.nd.sum(mx.nd.exp(out - max_out), axis=1)
+        pred = mx.nd.log(sum_out) + max_out.squeeze(axis=1)
         return out, states

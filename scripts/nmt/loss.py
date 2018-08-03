@@ -149,7 +149,10 @@ class MixSoftmaxCEMaskedLoss(Loss):
             pred = F.log_softmax(pred, self._axis)
             pred = F.broadcast_add(pred, F.expand_dims(mix, -1))
             pred = pred.reshape(shape=(-4, -1, self._num_mix, 0, 0))
-            pred = F.Custom(pred, op_type='log_sum_exp', axis=1)
+            #pred = F.Custom(pred, op_type='log_sum_exp', axis=1)
+            max_pred = F.max_axis(pred, 1, keepdims=True)
+            sum_pred = F.sum(F.exp(F.broadcast_minus(pred, max_pred)), axis=1)
+            pred = F.log(sum_pred) + F.squeeze(max_pred, axis=1)
         if self._sparse_label:
             sample_weight = F.cast(F.expand_dims(F.ones_like(label), axis=-1), dtype=np.float32)
             loss = -F.pick(pred, label, axis=self._axis, keepdims=True)
