@@ -214,11 +214,11 @@ def load_translation_data(dataset, src_lang='en', tgt_lang='vi'):
         cache_dataset(data_train_processed, common_prefix + '_train')
     data_val_processed = load_cached_dataset(common_prefix + '_val')
     if not data_val_processed:
-        data_val_processed = process_dataset(data_val, src_vocab, tgt_vocab)
+        data_val_processed = process_dataset(data_val, src_vocab, tgt_vocab, args.src_max_len, args.tgt_max_len)
         cache_dataset(data_val_processed, common_prefix + '_val')
     data_test_processed = load_cached_dataset(common_prefix + '_test')
     if not data_test_processed:
-        data_test_processed = process_dataset(data_test, src_vocab, tgt_vocab)
+        data_test_processed = process_dataset(data_test, src_vocab, tgt_vocab, args.src_max_len, args.tgt_max_len)
         cache_dataset(data_test_processed, common_prefix + '_test')
     fetch_tgt_sentence = lambda src, tgt: tgt.split()[:50]
     val_tgt_sentences = list(data_val.transform(fetch_tgt_sentence))
@@ -263,12 +263,13 @@ encoder, decoder = get_parallel_gnmt_encoder_decoder(hidden_size=args.num_hidden
                                                      num_bottom_layers=args.num_bottom_layers,
                                                      num_states=args.num_states,
                                                      num_bi_layers=args.num_bi_layers,
-                                                     i2h_bias_initializer='zeros')
+                                                     i2h_bias_initializer='zeros', use_residual=True)
 model = NMTModel(src_vocab=src_vocab, tgt_vocab=tgt_vocab, encoder=encoder, decoder=decoder,
                  embed_size=args.num_hidden, prefix='parallel_gnmt_')
 model.initialize(init=mx.init.Uniform(args.initial_w), ctx=ctx)
 static_alloc = True
 model.hybridize(static_alloc=static_alloc)
+#model.hybridize()
 logging.info(model)
 
 translator = MixBeamSearchTranslator(model=model, beam_size=args.beam_size,
@@ -281,7 +282,7 @@ logging.info('Use beam_size={}, alpha={}, K={}'.format(args.beam_size, args.lp_a
 
 loss_function = MixSoftmaxCEMaskedLoss(num_mix=args.num_states)
 loss_function.hybridize(static_alloc=static_alloc)
-
+#loss_function.hybridize()
 
 def evaluate(data_loader):
     """Evaluate given the data loader
