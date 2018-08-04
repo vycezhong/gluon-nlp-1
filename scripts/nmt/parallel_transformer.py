@@ -47,12 +47,17 @@ class TransformerDecoderCell(HybridBlock):
         self._use_residual = use_residual
         self._output_attention = output_attention
         self._scaled = scaled
+        self._scale = math.sqrt(num_heads)
         with self.name_scope():
             self.dropout_layer = nn.Dropout(dropout)
+            if attention_cell_inter == 'multi_memory':
+                inter_units = round(float(units) / self._scale) * num_heads
+            else:
+                inter_units = units
             self.attention_cell_in = _get_attention_cell(attention_cell_in, units=units,
                                                          num_heads=num_heads, num_memories=num_heads,
                                                          scaled=scaled, dropout=dropout)
-            self.attention_cell_inter = _get_attention_cell(attention_cell_inter, units=units,
+            self.attention_cell_inter = _get_attention_cell(attention_cell_inter, units=inter_units,
                                                             num_heads=num_heads, num_memories=num_heads,
                                                             scaled=scaled, dropout=dropout)
             self.proj_in = nn.Dense(units=units, flatten=False,
