@@ -145,7 +145,7 @@ class ParallelTransformerEncoder(HybridBlock, Seq2SeqEncoder):
         self._dropout = dropout
         self._use_residual = use_residual
         self._scaled = scaled
-        self._scale = num_states
+        self._scale = math.sqrt(num_states)
         with self.name_scope():
             self.dropout_layer = nn.Dropout(dropout)
             self.pre_layer_norm = nn.LayerNorm()
@@ -158,8 +158,9 @@ class ParallelTransformerEncoder(HybridBlock, Seq2SeqEncoder):
             curr_hidden_size = hidden_size
             for i in range(num_layers):
                 if i == self._num_bottom_layers:
-                    curr_units = units // num_states
-                    curr_hidden_size = hidden_size // num_states
+                    attention_cell = 'scaled_luong'
+                    curr_units = round(units / self._scale)
+                    curr_hidden_size = round(hidden_size / self._scale)
                 self.transformer_cells.add(TransformerEncoderCell(units=curr_units,
                                                                   hidden_size=curr_hidden_size,
                                                                   num_heads=num_states,
@@ -330,6 +331,7 @@ class ParallelTransformerDecoder(HybridBlock, Seq2SeqDecoder):
         self._use_residual = use_residual
         self._output_attention = output_attention
         self._scaled = scaled
+        self._scale = math.sqrt(num_states)
         with self.name_scope():
             self.dropout_layer = nn.Dropout(dropout)
             self.pre_layer_norm = nn.LayerNorm()
@@ -342,9 +344,10 @@ class ParallelTransformerDecoder(HybridBlock, Seq2SeqDecoder):
             curr_hidden_size = hidden_size
             for i in range(num_layers):
                 if i == self._num_bottom_layers:
-                    curr_units = units // num_states
-                    curr_hidden_size = hidden_size // num_states
-                    attention_cell_inter = 'multi_head'
+                    curr_units = round(units / self._scale)
+                    curr_hidden_size = round(hidden_size / self._scale)
+                    attention_cell_in = 'scaled_luong'
+                    attention_cell_inter = 'scaled_luong'
                 self.transformer_cells.add(TransformerDecoderCell(units=curr_units,
                                                                   hidden_size=curr_hidden_size,
                                                                   num_heads=num_states,
