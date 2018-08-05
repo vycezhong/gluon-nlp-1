@@ -52,9 +52,9 @@ from gluonnlp.data import NLTKMosesDetokenizer
 from gluonnlp.data import ConstWidthBucket, LinearWidthBucket, ExpWidthBucket,\
     FixedBucketSampler, IWSLT2015, WMT2016, WMT2016BPE, WMT2014, WMT2014BPE
 from gluonnlp.model import BeamSearchScorer
-from translation import NMTModel, BeamSearchTranslator
-from transformer import get_transformer_encoder_decoder
-from loss import SoftmaxCEMaskedLoss, LabelSmoothing
+from translation import NMTModel, MixBeamSearchTranslator
+from parallel_transformer import get_parallel_transformer_encoder_decoder
+from loss import MixSoftmaxCEMaskedLoss, LabelSmoothing
 from utils import logging_config
 from bleu import _bpe_to_words, compute_bleu
 import _constants as _C
@@ -79,8 +79,10 @@ parser.add_argument('--epsilon', type=float, default=0.1,
                     help='epsilon parameter for label smoothing')
 parser.add_argument('--num_layers', type=int, default=6,
                     help='number of layers in the encoder and decoder')
-parser.add_argument('--num_heads', type=int, default=8,
-                    help='number of heads in multi-head attention')
+parser.add_argument('--num_bottom_layers', type=int, default=4,
+                    help='number of bottom layers before transition to mulitple states')
+parser.add_argument('--num_states', type=int, default=8,
+                    help='number of states')
 parser.add_argument('--scaled', action='store_true', help='Turn on to use scale in attention')
 parser.add_argument('--batch_size', type=int, default=1024,
                     help='Batch size. Number of tokens per gpu in a minibatch')
@@ -326,35 +328,37 @@ if args.tgt_max_len > 0:
     tgt_max_len = args.tgt_max_len
 else:
     tgt_max_len = max_len[1]
-encoder, decoder = get_transformer_encoder_decoder(units=args.num_units,
-                                                   hidden_size=args.hidden_size,
-                                                   dropout=args.dropout,
-                                                   num_layers=args.num_layers,
-                                                   num_heads=args.num_heads,
-                                                   max_src_length=max(src_max_len, 500),
-                                                   max_tgt_length=max(tgt_max_len, 500),
-                                                   scaled=args.scaled)
+encoder, decoder = get_parallel_transformer_encoder_decoder(units=args.num_units,
+                                                            hidden_size=args.hidden_size,
+                                                            num_bottom_layers=args.num_bottom_layers,
+                                                            dropout=args.dropout,
+                                                            num_layers=args.num_layers,
+                                                            num_states=args.num_states,
+                                                            max_src_length=max(src_max_len, 500),
+                                                            max_tgt_length=max(tgt_max_len, 500),
+                                                            scaled=args.scaled)
 model = NMTModel(src_vocab=src_vocab, tgt_vocab=tgt_vocab, encoder=encoder, decoder=decoder,
-                 share_embed=True, embed_size=args.num_units, tie_weights=True,
-                 embed_initializer=None, prefix='transformer_')
+                 embed_size=args.num_units, tie_weights=True, inner_units=args.num_units,
+                 in_units=args.num_units // args.num_states, factorized=True,
+                 embed_initializer=None, prefix='parallel_transformer_')
 model.initialize(init=mx.init.Xavier(magnitude=args.magnitude), ctx=ctx)
 static_alloc = True
 model.hybridize(static_alloc=static_alloc)
 logging.info(model)
 
-translator = BeamSearchTranslator(model=model, beam_size=args.beam_size,
-                                  scorer=BeamSearchScorer(alpha=args.lp_alpha,
-                                                          K=args.lp_k),
-                                  max_length=200)
+translator = MixBeamSearchTranslator(model=model, beam_size=args.beam_size,
+                                     scorer=BeamSearchScorer(alpha=args.lp_alpha,
+                                                             K=args.lp_k),
+                                     num_mix=args.num_states, max_length=200)
 logging.info('Use beam_size={}, alpha={}, K={}'.format(args.beam_size, args.lp_alpha, args.lp_k))
 
 label_smoothing = LabelSmoothing(epsilon=args.epsilon, units=len(tgt_vocab))
 label_smoothing.hybridize(static_alloc=static_alloc)
 
-loss_function = SoftmaxCEMaskedLoss(sparse_label=False)
+loss_function = MixSoftmaxCEMaskedLoss(sparse_label=False, num_mix=args.num_states)
 loss_function.hybridize(static_alloc=static_alloc)
 
-test_loss_function = SoftmaxCEMaskedLoss()
+test_loss_function = MixSoftmaxCEMaskedLoss(num_mix=args.num_states)
 test_loss_function.hybridize(static_alloc=static_alloc)
 
 detokenizer = NLTKMosesDetokenizer()
@@ -385,8 +389,8 @@ def evaluate(data_loader, context=ctx[0]):
         src_valid_length = src_valid_length.as_in_context(context)
         tgt_valid_length = tgt_valid_length.as_in_context(context)
         # Calculating Loss
-        out, _ = model(src_seq, tgt_seq[:, :-1], src_valid_length, tgt_valid_length - 1)
-        loss = test_loss_function(out, tgt_seq[:, 1:], tgt_valid_length - 1).mean().asscalar()
+        out, additional_out = model(src_seq, tgt_seq[:, :-1], src_valid_length, tgt_valid_length - 1)
+        loss = test_loss_function(out, additional_out[1][0], tgt_seq[:, 1:], tgt_valid_length - 1).mean().asscalar()
         all_inst_ids.extend(inst_ids.asnumpy().astype(np.int32).tolist())
         avg_loss += loss * (tgt_seq.shape[1] - 1)
         avg_loss_denom += (tgt_seq.shape[1] - 1)
@@ -519,10 +523,10 @@ def train():
             Ls = []
             with mx.autograd.record():
                 for src_seq, tgt_seq, src_valid_length, tgt_valid_length in seqs:
-                    out, _ = model(src_seq, tgt_seq[:, :-1],
+                    out, additional_out = model(src_seq, tgt_seq[:, :-1],
                                    src_valid_length, tgt_valid_length - 1)
                     smoothed_label = label_smoothing(tgt_seq[:, 1:])
-                    ls = loss_function(out, smoothed_label, tgt_valid_length - 1).sum()
+                    ls = loss_function(out, additional_out[1][0], smoothed_label, tgt_valid_length - 1).sum()
                     Ls.append((ls * (tgt_seq.shape[1] - 1)) / args.batch_size / 100.0)
             for L in Ls:
                 L.backward()

@@ -19,11 +19,12 @@
 """Machine translation models and translators."""
 
 
-__all__ = ['NMTModel', 'BeamSearchTranslator', 'MixBeamSearchTranslator']
+__all__ = ['NMTModel', 'BeamSearchTranslator', 'MixBeamSearchTranslator', 'FactorizedDense']
 
 import warnings
 import numpy as np
-from mxnet.gluon import Block
+from mxnet.gluon.nn import Activation
+from mxnet.gluon import Block, HybridBlock
 from mxnet.gluon import nn
 import mxnet as mx
 from gluonnlp.model import BeamSearchScorer, BeamSearchSampler
@@ -69,8 +70,8 @@ class NMTModel(Block):
     """
     def __init__(self, src_vocab, tgt_vocab, encoder, decoder,
                  embed_size=None, embed_dropout=0.0, embed_initializer=mx.init.Uniform(0.1),
-                 src_embed=None, tgt_embed=None, share_embed=False, tie_weights=False,
-                 tgt_proj=None, prefix=None, params=None):
+                 src_embed=None, tgt_embed=None, share_embed=False, tie_weights=False, inner_units=None,
+                 in_units=None, tgt_proj=None, factorized=False, prefix=None, params=None):
         super(NMTModel, self).__init__(prefix=prefix, params=params)
         self.tgt_vocab = tgt_vocab
         self.src_vocab = src_vocab
@@ -114,8 +115,15 @@ class NMTModel(Block):
                         self.tgt_embed.add(nn.Dropout(rate=embed_dropout))
             # Construct tgt proj
         if tie_weights:
-            self.tgt_proj = nn.Dense(units=len(tgt_vocab), flatten=False,
-                                     params=self.tgt_embed.params, prefix='tgt_proj_')
+            if factorized:
+                assert inner_units is not None and in_units is not None, \
+                    'inner_units and in_units cannot be None when tie_weights is True'
+                self.tgt_proj = FactorizedDense(out_units=len(tgt_vocab), inner_units=inner_units,
+                                                in_units=in_units, flatten=False,
+                                                params=self.tgt_embed.params, prefix='tgt_proj_')
+            else:
+                self.tgt_proj = nn.Dense(units=len(tgt_vocab), flatten=False,
+                                         params=self.tgt_embed.params, prefix='tgt_proj_')
         else:
             if tgt_proj is None:
                 with self.name_scope():
@@ -323,3 +331,94 @@ class MixBeamSearchTranslator(BeamSearchTranslator):
         out = out.reshape(shape=(-4, -1, self._num_mix, 0))
         out = mx.nd.log(mx.nd.sum(out, axis=-2) + 1e-12)
         return out, states
+
+
+class FactorizedDense(HybridBlock):
+    r"""Factorize densely-connected NN layer.
+    `Dense` implements the operation:
+    `output = activation(dot(input, dot(weight_1, weight_2)) + bias)`
+    where `activation` is the element-wise activation function
+    passed as the `activation` argument, `weight_1` and `weight_2` are both weights matrix
+    created by the layer, and `bias` is a bias vector created by the layer
+    (only applicable if `use_bias` is `True`).
+    Note: the input must be a tensor with rank 2. Use `flatten` to convert it
+    to rank 2 manually if necessary.
+    Parameters
+    ----------
+    units : int
+        Dimensionality of the output space.
+    activation : str
+        Activation function to use. See help on `Activation` layer.
+        If you don't specify anything, no activation is applied
+        (ie. "linear" activation: `a(x) = x`).
+    use_bias : bool
+        Whether the layer uses a bias vector.
+    flatten: bool
+        Whether the input tensor should be flattened.
+        If true, all but the first axis of input data are collapsed together.
+        If false, all but the last axis of input data are kept the same, and the transformation
+        applies on the last axis.
+    dtype : str or np.dtype, default 'float32'
+        Data type of output embeddings.
+    weight_initializer : str or `Initializer`
+        Initializer for the `kernel` weights matrix.
+    bias_initializer: str or `Initializer`
+        Initializer for the bias vector.
+    in_units : int, optional
+        Size of the input data. If not specified, initialization will be
+        deferred to the first time `forward` is called and `in_units`
+        will be inferred from the shape of input data.
+    prefix : str or None
+        See document of `Block`.
+    params : ParameterDict or None
+        See document of `Block`.
+    Inputs:
+        - **data**: if `flatten` is True, `data` should be a tensor with shape
+          `(batch_size, x1, x2, ..., xn)`, where x1 * x2 * ... * xn is equal to
+          `in_units`. If `flatten` is False, `data` should have shape
+          `(x1, x2, ..., xn, in_units)`.
+    Outputs:
+        - **out**: if `flatten` is True, `out` will be a tensor with shape
+          `(batch_size, units)`. If `flatten` is False, `out` will have shape
+          `(x1, x2, ..., xn, units)`.
+    """
+    def __init__(self, inner_units, out_units, activation=None, use_bias=True, flatten=True,
+                 dtype='float32', weight_initializer=None, bias_initializer='zeros',
+                 in_units=0, **kwargs):
+        super(FactorizedDense, self).__init__(**kwargs)
+        self._flatten = flatten
+        with self.name_scope():
+            self._inner_units = inner_units
+            self._out_units = out_units
+            self._in_units = in_units
+            self.factor = self.params.get('factor', shape=(inner_units, in_units),
+                                          init=weight_initializer, dtype=dtype,
+                                          allow_deferred_init=True)
+            self.weight = self.params.get('weight', shape=(out_units, inner_units),
+                                          init=weight_initializer, dtype=dtype,
+                                          allow_deferred_init=True)
+            if use_bias:
+                self.bias = self.params.get('bias', shape=(out_units,),
+                                            init=bias_initializer, dtype=dtype,
+                                            allow_deferred_init=True)
+            else:
+                self.bias = None
+            if activation is not None:
+                self.act = Activation(activation, prefix=activation+'_')
+            else:
+                self.act = None
+
+    def hybrid_forward(self, F, x, weight, factor, bias=None):
+        act = F.FullyConnected(x, F.dot(weight, factor), bias,
+                               no_bias=bias is None, num_hidden=self._out_units,
+                               flatten=self._flatten, name='fwd')
+        if self.act is not None:
+            act = self.act(act)
+        return act
+
+    def __repr__(self):
+        s = '{name}({layout}, {act})'
+        shape = [self.weight.shape[0]] + list(self.factor.shape)
+        return s.format(name=self.__class__.__name__,
+                        act=self.act if self.act else 'linear',
+                        layout='{0} -> {1} ->{2}'.format(shape[2] if shape[2] else None, shape[1], shape[0]))
