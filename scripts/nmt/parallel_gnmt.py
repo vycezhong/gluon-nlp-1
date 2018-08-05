@@ -131,7 +131,7 @@ class ParallelGNMTEncoder(Seq2SeqEncoder):
                                         prefix='rnn%d_' % i))
             self.transition_cell = nn.Dense(units=hidden_units * self._num_states,
                                             flatten=False, activation='relu')
-            self.residual_proj = nn.Dense(units=hidden_units, flatten=False)
+            self.residual_proj = nn.Dense(units=hidden_units, flatten=False, use_bias=False)
             self.layer_norm = nn.LayerNorm()
 
     def __call__(self, inputs, states=None, valid_length=None):
@@ -279,7 +279,7 @@ class ParallelGNMTDecoder(HybridBlock, Seq2SeqDecoder):
                                             flatten=True, activation='relu')
             # Construct mixture probability proj
             self.mix_proj = nn.Dense(units=num_states, flatten=False, prefix='mix_proj_')
-            self.residual_proj = nn.Dense(units=hidden_units, flatten=False)
+            self.residual_proj = nn.Dense(units=hidden_units, flatten=False, use_bias=False)
             self.layer_norm = nn.LayerNorm()
             self._state_units = hidden_units
 

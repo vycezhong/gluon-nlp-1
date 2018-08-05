@@ -110,7 +110,7 @@ parser.add_argument('--save_dir', type=str, default='out_dir',
 parser.add_argument('--gpu', type=int, default=None,
                     help='id of the gpu to use. Set it to empty means to use cpu.')
 args = parser.parse_args()
-print(args)
+logging.info(args)
 logging_config(args.save_dir)
 
 
@@ -262,7 +262,9 @@ encoder, decoder = get_parallel_gnmt_encoder_decoder(hidden_size=args.num_hidden
                                                      num_layers=args.num_layers,
                                                      num_bottom_layers=args.num_bottom_layers,
                                                      num_states=args.num_states,
-                                                     num_bi_layers=args.num_bi_layers, i2h_bias_initializer='zeros')
+                                                     num_bi_layers=args.num_bi_layers,
+                                                     i2h_bias_initializer='zeros', 
+                                                     use_residual=True)
 model = NMTModel(src_vocab=src_vocab, tgt_vocab=tgt_vocab, encoder=encoder, decoder=decoder,
                  embed_size=args.num_hidden, prefix='parallel_gnmt_')
 model.initialize(init=mx.init.Uniform(args.initial_w), ctx=ctx)
@@ -381,6 +383,26 @@ def train():
                                   batchify_fn=test_batchify_fn,
                                   num_workers=8)
     best_valid_bleu = 0.0
+    #model.load_params(os.path.join(args.save_dir, 'valid_best.params'))
+    #prefix = 'parallel_gnmt_'
+    #for j in range(9):
+    #    params = mx.nd.load(os.path.join(args.save_dir,
+    #                                     'epoch{:d}.params'.format(args.epochs - j - 1)))
+    #    alpha = 1. / (j + 1)
+    #    for k, v in model.collect_params().items():
+    #        v.data()[:] += alpha * (params[k[len(prefix):]].as_in_context(ctx) - v.data())
+    #valid_loss, valid_translation_out = evaluate(val_data_loader)
+    #valid_bleu_score, _, _, _, _ = compute_bleu([val_tgt_sentences], valid_translation_out)
+    #logging.info('Best model valid Loss={:.4f}, valid ppl={:.4f}, valid bleu={:.2f}'
+    #             .format(valid_loss, np.exp(valid_loss), valid_bleu_score * 100))
+    #test_loss, test_translation_out = evaluate(test_data_loader)
+    #test_bleu_score, _, _, _, _ = compute_bleu([test_tgt_sentences], test_translation_out)
+    #logging.info('Best model test Loss={:.4f}, test ppl={:.4f}, test bleu={:.2f}'
+    #             .format(test_loss, np.exp(test_loss), test_bleu_score * 100))
+    #write_sentences(valid_translation_out,
+    #                os.path.join(args.save_dir, 'best_valid_out.txt'))
+    #write_sentences(test_translation_out,
+    #                os.path.join(args.save_dir, 'best_test_out.txt'))
     for epoch_id in range(args.epochs):
         log_avg_loss = 0
         log_avg_gnorm = 0
@@ -438,10 +460,11 @@ def train():
             logging.info('Save best parameters to {}'.format(save_path))
             model.save_params(save_path)
         else:
-        #if epoch_id + 1 >= (args.epochs * 2) // 3:
             new_lr = trainer.learning_rate * args.lr_update_factor
             logging.info('Learning rate change to {}'.format(new_lr))
             trainer.set_learning_rate(new_lr)
+        save_path = os.path.join(args.save_dir, 'epoch{:d}.params'.format(epoch_id))
+        model.save_params(save_path)
     model.load_params(os.path.join(args.save_dir, 'valid_best.params'))
     valid_loss, valid_translation_out = evaluate(val_data_loader)
     valid_bleu_score, _, _, _, _ = compute_bleu([val_tgt_sentences], valid_translation_out)
