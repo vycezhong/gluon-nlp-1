@@ -34,7 +34,7 @@ except ImportError:
 
 
 class TransformerDecoderCell(HybridBlock):
-    def __init__(self, units=128, hidden_size=512, num_heads=4,
+    def __init__(self, units=512, hidden_size=2048, num_heads=8, num_memories=4,
                  attention_cell_in='multi_head',
                  attention_cell_inter='multi_memory', scaled=True,
                  dropout=0.0, use_residual=True, output_attention=False,
@@ -43,22 +43,27 @@ class TransformerDecoderCell(HybridBlock):
         super(TransformerDecoderCell, self).__init__(prefix=prefix, params=params)
         self._units = units
         self._num_heads = num_heads
+        self._num_memories = num_memories
         self._dropout = dropout
         self._use_residual = use_residual
         self._output_attention = output_attention
         self._scaled = scaled
-        self._scale = math.sqrt(num_heads)
         with self.name_scope():
             self.dropout_layer = nn.Dropout(dropout)
             if attention_cell_inter == 'multi_memory':
-                inter_units = round(float(units) / self._scale) * num_heads
+                num_heads_mem = num_heads // num_memories
+                key_units = units // num_memories
+                value_units = units // num_memories
             else:
-                inter_units = units
+                num_heads_mem = num_heads
+                key_units = units
+                value_units = units
             self.attention_cell_in = _get_attention_cell(attention_cell_in, units=units,
-                                                         num_heads=num_heads, num_memories=num_heads,
+                                                         num_heads=num_heads, num_memories=num_memories,
                                                          scaled=scaled, dropout=dropout)
-            self.attention_cell_inter = _get_attention_cell(attention_cell_inter, units=inter_units,
-                                                            num_heads=num_heads, num_memories=num_heads,
+            self.attention_cell_inter = _get_attention_cell(attention_cell_inter, units=units,
+                                                            key_units=key_units, value_units=value_units,
+                                                            num_heads=num_heads_mem, num_memories=num_memories,
                                                             scaled=scaled, dropout=dropout)
             self.proj_in = nn.Dense(units=units, flatten=False,
                                     use_bias=False,
@@ -142,7 +147,8 @@ class ParallelTransformerEncoder(HybridBlock, Seq2SeqEncoder):
             .format(units, num_states)
         self._num_layers = num_layers
         self._num_bottom_layers = num_bottom_layers
-        self._num_states = num_states
+        self._num_heads = num_states
+        self._num_states = num_states // 2
         self._max_length = max_length
         self._units = units
         self._hidden_size = hidden_size
@@ -150,7 +156,7 @@ class ParallelTransformerEncoder(HybridBlock, Seq2SeqEncoder):
         self._dropout = dropout
         self._use_residual = use_residual
         self._scaled = scaled
-        self._scale = math.sqrt(num_states)
+        self._scale = int(math.sqrt(self._num_states))
         with self.name_scope():
             self.dropout_layer = nn.Dropout(dropout)
             self.pre_layer_norm = nn.LayerNorm()
@@ -161,14 +167,16 @@ class ParallelTransformerEncoder(HybridBlock, Seq2SeqEncoder):
             self.transformer_cells = nn.HybridSequential()
             curr_units = units
             curr_hidden_size = hidden_size
+            curr_num_heads = self._num_heads
             for i in range(num_layers):
                 if i == self._num_bottom_layers:
-                    attention_cell = 'scaled_luong'
-                    curr_units = round(units / self._scale)
-                    curr_hidden_size = round(hidden_size / self._scale)
+                    #attention_cell = 'scaled_luong'
+                    curr_units = units // self._scale
+                    curr_hidden_size = hidden_size // self._scale
+                    curr_num_heads = self._num_heads // self._scale
                 self.transformer_cells.add(TransformerEncoderCell(units=curr_units,
                                                                   hidden_size=curr_hidden_size,
-                                                                  num_heads=num_states,
+                                                                  num_heads=curr_num_heads,
                                                                   dropout=dropout,
                                                                   attention_cell=attention_cell,
                                                                   weight_initializer=weight_initializer,
@@ -330,13 +338,14 @@ class ParallelTransformerDecoder(HybridBlock, Seq2SeqDecoder):
         self._units = units
         self._hidden_size = hidden_size
         self._num_bottom_layers = num_bottom_layers
-        self._num_states = num_states
+        self._num_heads = num_states
+        self._num_states = num_states // 2
         self._max_length = max_length
         self._dropout = dropout
         self._use_residual = use_residual
         self._output_attention = output_attention
         self._scaled = scaled
-        self._scale = math.sqrt(num_states)
+        self._scale = int(math.sqrt(self._num_states))
         with self.name_scope():
             self.dropout_layer = nn.Dropout(dropout)
             self.pre_layer_norm = nn.LayerNorm()
@@ -347,15 +356,18 @@ class ParallelTransformerDecoder(HybridBlock, Seq2SeqDecoder):
             self.transformer_cells = nn.HybridSequential()
             curr_units = units
             curr_hidden_size = hidden_size
+            curr_num_heads = self._num_heads
             for i in range(num_layers):
                 if i == self._num_bottom_layers:
-                    curr_units = round(units / self._scale)
-                    curr_hidden_size = round(hidden_size / self._scale)
-                    attention_cell_in = 'scaled_luong'
-                    attention_cell_inter = 'scaled_luong'
+                    curr_units = units // self._scale
+                    curr_hidden_size = hidden_size // self._scale
+                    curr_num_heads = self._num_heads // self._scale 
+                    #attention_cell_in = 'scaled_luong'
+                    attention_cell_inter = 'multi_head'
                 self.transformer_cells.add(TransformerDecoderCell(units=curr_units,
                                                                   hidden_size=curr_hidden_size,
-                                                                  num_heads=num_states,
+                                                                  num_heads=curr_num_heads,
+                                                                  num_memories=self._num_states,
                                                                   attention_cell_in=attention_cell_in,
                                                                   attention_cell_inter=attention_cell_inter,
                                                                   weight_initializer=weight_initializer,
@@ -369,7 +381,7 @@ class ParallelTransformerDecoder(HybridBlock, Seq2SeqDecoder):
                                             flatten=False, activation='relu', prefix='transition_')
             self.residual_proj = nn.Dense(units=curr_units, flatten=False,
                                           prefix='residual_proj_', use_bias=False)
-            self.mix_proj = nn.Dense(units=num_states, flatten=False, prefix='mix_proj_')
+            self.mix_proj = nn.Dense(units=self._num_states, flatten=False, prefix='mix_proj_')
 
     def init_state_from_encoder(self, encoder_outputs, encoder_valid_length=None):
         """Initialize the state from the encoder outputs.

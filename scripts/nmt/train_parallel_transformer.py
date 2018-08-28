@@ -339,7 +339,7 @@ encoder, decoder = get_parallel_transformer_encoder_decoder(units=args.num_units
                                                             scaled=args.scaled)
 model = NMTModel(src_vocab=src_vocab, tgt_vocab=tgt_vocab, encoder=encoder, decoder=decoder,
                  embed_size=args.num_units, tie_weights=True, share_embed=True, inner_units=args.num_units,
-                 in_units=round(args.num_units / math.sqrt(args.num_states)), factorized=True,
+                 in_units=args.num_units // int(math.sqrt(args.num_states // 2)), factorized=True,
                  embed_initializer=None, prefix='parallel_transformer_')
 model.initialize(init=mx.init.Xavier(magnitude=args.magnitude), ctx=ctx)
 static_alloc = True
@@ -355,10 +355,10 @@ logging.info('Use beam_size={}, alpha={}, K={}'.format(args.beam_size, args.lp_a
 label_smoothing = LabelSmoothing(epsilon=args.epsilon, units=len(tgt_vocab))
 label_smoothing.hybridize(static_alloc=static_alloc)
 
-loss_function = MixSoftmaxCEMaskedLoss(sparse_label=False, num_mix=args.num_states)
+loss_function = MixSoftmaxCEMaskedLoss(sparse_label=False, num_mix=args.num_states // 2)
 loss_function.hybridize(static_alloc=static_alloc)
 
-test_loss_function = MixSoftmaxCEMaskedLoss(num_mix=args.num_states)
+test_loss_function = MixSoftmaxCEMaskedLoss(num_mix=args.num_states // 2)
 test_loss_function.hybridize(static_alloc=static_alloc)
 
 detokenizer = NLTKMosesDetokenizer()
@@ -493,6 +493,7 @@ def train():
         raise NotImplementedError
 
     best_valid_bleu = 0.0
+    #step_num = 14826
     step_num = 0
     warmup_steps = args.warmup_steps
     grad_interval = args.num_accumulated
@@ -500,6 +501,27 @@ def train():
     average_start = (len(train_data_loader) // grad_interval) * (args.epochs - args.average_start)
     average_param_dict = None
     model.collect_params().zero_grad()
+    #model.load_params(os.path.join(args.save_dir, 'epoch29.params'), ctx)
+    #if args.average_checkpoint:
+    #    for j in range(args.num_averages):
+    #        params = mx.nd.load(os.path.join(args.save_dir,
+    #                                         'epoch{:d}.params'.format(args.epochs - j - 1)))
+    #        alpha = 1. / (j + 1)
+    #        for k, v in model.collect_params().items():
+    #            for c in ctx:
+    #                v.data(c)[:] += alpha * (params[k[len('parallel_transformer_'):]].as_in_context(c) - v.data(c))
+    #valid_loss, valid_translation_out = evaluate(val_data_loader, ctx[0])
+    #valid_bleu_score, _, _, _, _ = compute_bleu([val_tgt_sentences], valid_translation_out,
+    #                                            tokenized=tokenized, tokenizer=args.bleu, bpe=bpe,
+    #                                            split_compound_word=split_compound_word)
+    #logging.info('Best model valid Loss={:.4f}, valid ppl={:.4f}, valid bleu={:.2f}'
+    #             .format(valid_loss, np.exp(valid_loss), valid_bleu_score * 100))
+    #test_loss, test_translation_out = evaluate(test_data_loader, ctx[0])
+    #test_bleu_score, _, _, _, _ = compute_bleu([test_tgt_sentences], test_translation_out,
+    #                                           tokenized=tokenized, tokenizer=args.bleu, bpe=bpe,
+    #                                           split_compound_word=split_compound_word)
+    #logging.info('Best model test Loss={:.4f}, test ppl={:.4f}, test bleu={:.2f}'
+    #             .format(test_loss, np.exp(test_loss), test_bleu_score * 100))
     for epoch_id in range(args.epochs):
         log_avg_loss = 0
         log_wc = 0

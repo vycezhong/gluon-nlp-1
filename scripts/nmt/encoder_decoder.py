@@ -73,7 +73,8 @@ def _get_cell_type(cell_type):
 
 
 def _get_attention_cell(attention_cell, units=None,
-                        scaled=True, num_heads=None,
+                        key_units=None, value_units=None,
+                        scaled=True, num_heads=1,
                         num_memories=None,
                         use_bias=False, dropout=0.0):
     """
@@ -110,7 +111,9 @@ def _get_attention_cell(attention_cell, units=None,
                                           key_units=units, value_units=units, num_heads=num_heads)
         elif attention_cell == 'multi_memory':
             base_cell = DotProductAttentionCell(scaled=scaled, dropout=dropout)
-            return MultiMemoryAttentionCell(base_cell=base_cell, query_units=units, use_bias=use_bias,
+            return MultiMemoryAttentionCell(base_cell=base_cell, query_units=units, key_units=key_units,
+                                            value_units=value_units, use_bias=use_bias,
+                                            num_heads=num_heads,
                                             num_memories=num_memories)
         else:
             raise NotImplementedError
