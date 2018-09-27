@@ -349,7 +349,7 @@ logging.info(model)
 translator = MixBeamSearchTranslator(model=model, beam_size=args.beam_size,
                                      scorer=BeamSearchScorer(alpha=args.lp_alpha,
                                                              K=args.lp_k),
-                                     num_mix=args.num_states, max_length=200)
+                                     num_mix=args.num_states // 2, max_length=200)
 logging.info('Use beam_size={}, alpha={}, K={}'.format(args.beam_size, args.lp_alpha, args.lp_k))
 
 label_smoothing = LabelSmoothing(epsilon=args.epsilon, units=len(tgt_vocab))
@@ -501,7 +501,7 @@ def train():
     average_start = (len(train_data_loader) // grad_interval) * (args.epochs - args.average_start)
     average_param_dict = None
     model.collect_params().zero_grad()
-    #model.load_params(os.path.join(args.save_dir, 'epoch29.params'), ctx)
+    #model.load_parameters(os.path.join(args.save_dir, 'average.params'), ctx)
     #if args.average_checkpoint:
     #    for j in range(args.num_averages):
     #        params = mx.nd.load(os.path.join(args.save_dir,
@@ -510,6 +510,9 @@ def train():
     #        for k, v in model.collect_params().items():
     #            for c in ctx:
     #                v.data(c)[:] += alpha * (params[k[len('parallel_transformer_'):]].as_in_context(c) - v.data(c))
+    #params = mx.nd.load(os.path.join(args.save_dir,'average.params'))
+    #for k, v in model.collect_params().items():
+    #    v.set_data(params[k])
     #valid_loss, valid_translation_out = evaluate(val_data_loader, ctx[0])
     #valid_bleu_score, _, _, _, _ = compute_bleu([val_tgt_sentences], valid_translation_out,
     #                                            tokenized=tokenized, tokenizer=args.bleu, bpe=bpe,
@@ -549,7 +552,7 @@ def train():
                                    src_valid_length, tgt_valid_length - 1)
                     smoothed_label = label_smoothing(tgt_seq[:, 1:])
                     ls = loss_function(out, additional_out[1][0], smoothed_label, tgt_valid_length - 1).sum()
-                    Ls.append((ls * (tgt_seq.shape[1] - 1)) / args.batch_size / 100.0)
+                    Ls.append((ls * (tgt_seq.shape[1] - 1)) / args.batch_size / 1000.0)
             for L in Ls:
                 L.backward()
             if batch_id % grad_interval == grad_interval - 1 or\
@@ -557,7 +560,7 @@ def train():
                 if average_param_dict is None:
                     average_param_dict = {k: v.data(ctx[0]).copy() for k, v in
                                           model.collect_params().items()}
-                trainer.step(float(loss_denom) / args.batch_size / 100.0)
+                trainer.step(float(loss_denom) / args.batch_size / 1000.0)
                 param_dict = model.collect_params()
                 param_dict.zero_grad()
                 if step_num > average_start:
@@ -567,7 +570,7 @@ def train():
             step_loss += sum([L.asscalar() for L in Ls])
             if batch_id % grad_interval == grad_interval - 1 or\
                     batch_id == len(train_data_loader) - 1:
-                log_avg_loss += step_loss / loss_denom * args.batch_size * 100.0
+                log_avg_loss += step_loss / loss_denom * args.batch_size * 1000.0
                 loss_denom = 0
                 step_loss = 0
             log_wc += src_wc + tgt_wc

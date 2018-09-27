@@ -392,7 +392,7 @@ class FactorizedDense(HybridBlock):
             self._out_units = out_units
             self._in_units = in_units
             self.factor = self.params.get('factor', shape=(inner_units, in_units),
-                                          init=weight_initializer, dtype=dtype,
+                                          init=mx.init.Orthogonal(rand_type="normal"), dtype=dtype,
                                           allow_deferred_init=True)
             self.weight = self.params.get('weight', shape=(out_units, inner_units),
                                           init=weight_initializer, dtype=dtype,

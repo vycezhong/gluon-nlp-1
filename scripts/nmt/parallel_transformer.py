@@ -84,7 +84,7 @@ class TransformerDecoderCell(HybridBlock):
 
             self.layer_norm_in = nn.LayerNorm()
             self.layer_norm_inter = nn.LayerNorm()
-
+  
     def hybrid_forward(self, F, inputs, mem_value, mask=None, mem_mask=None):
         #  pylint: disable=arguments-differ
         """Transformer Decoder Attention Cell.
@@ -187,7 +187,7 @@ class ParallelTransformerEncoder(HybridBlock, Seq2SeqEncoder):
                                                                   prefix='transformer%d_' % i))
             self.transition_cell = nn.Dense(units=curr_units * self._num_states,
                                             flatten=False, activation='relu', prefix='transition_')
-            self.residual_proj = nn.Dense(units=curr_units, flatten=False, prefix='residual_proj_', use_bias=False)
+            self.residual_proj = nn.Dense(units=curr_units, flatten=False, prefix='residual_proj_')
 
     def __call__(self, inputs, states=None, valid_length=None):
         """Encoder the inputs given the states and valid sequence length.
@@ -380,7 +380,7 @@ class ParallelTransformerDecoder(HybridBlock, Seq2SeqDecoder):
             self.transition_cell = nn.Dense(units=curr_units * self._num_states,
                                             flatten=False, activation='relu', prefix='transition_')
             self.residual_proj = nn.Dense(units=curr_units, flatten=False,
-                                          prefix='residual_proj_', use_bias=False)
+                                          prefix='residual_proj_')
             self.mix_proj = nn.Dense(units=self._num_states, flatten=False, prefix='mix_proj_')
 
     def init_state_from_encoder(self, encoder_outputs, encoder_valid_length=None):

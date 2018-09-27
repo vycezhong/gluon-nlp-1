@@ -467,6 +467,44 @@ class DotProductAttentionCell(AttentionCell):
         return att_weights
 
 
+class BatchDense(HybridBlock):
+    def __init__(self, block_size, units, activation=None, use_bias=True,
+                 dtype='float32', weight_initializer=None, bias_initializer='zeros',
+                 in_units=0, **kwargs):
+        super(BatchDense, self).__init__(**kwargs)
+        with self.name_scope():
+            self._units = units
+            self._in_units = in_units
+            self.weight = self.params.get('weight', shape=(block_size, in_units, units),
+                                          init=weight_initializer, dtype=dtype,
+                                          allow_deferred_init=True)
+            if use_bias:
+                self.bias = self.params.get('bias', shape=(block_size, units),
+                                            init=bias_initializer, dtype=dtype,
+                                            allow_deferred_init=True)
+            else:
+                self.bias = None
+            if activation is not None:
+                self.act = Activation(activation, prefix=activation+'_')
+            else:
+                self.act = None
+
+    def hybrid_forward(self, F, x, weight, bias=None):
+        act = F.batch_dot(x, weight)
+        if bias is not None:
+            act = F.broadcast_add(act, F.expand_dims(bias, axis=1))
+        if self.act is not None:
+            act = self.act(act)
+        return act
+
+    def __repr__(self):
+        s = '{name}({layout}, {act})'
+        shape = self.weight.shape
+        return s.format(name=self.__class__.__name__,
+                        act=self.act if self.act else 'linear',
+                        layout='{0} -> {1}'.format(shape[2] if shape[2] else None, shape[1]))
+
+
 class MultiMemoryAttentionCell(AttentionCell):
     r"""Multi-memory Attention Cell.
 
@@ -507,12 +545,13 @@ class MultiMemoryAttentionCell(AttentionCell):
                                        flatten=False, weight_initializer=weight_initializer,
                                        bias_initializer=bias_initializer, prefix='query_')
             if self._num_heads > 1:
-                self.proj_key = nn.Dense(units=self._key_units, use_bias=self._use_bias,
-                                         flatten=False, weight_initializer=weight_initializer,
-                                         bias_initializer=bias_initializer, prefix='key_')
-                self.proj_value = nn.Dense(units=self._value_units, use_bias=self._use_bias,
-                                           flatten=False, weight_initializer=weight_initializer,
-                                           bias_initializer=bias_initializer, prefix='value_')
+                self.proj_key = BatchDense(block_size=self._num_memories, units=self._key_units, use_bias=self._use_bias,
+                                           weight_initializer=weight_initializer, in_units=self._key_units*2,
+                                           bias_initializer=bias_initializer, prefix='key_')
+                self.proj_value = BatchDense(block_size=self._num_memories, units=self._value_units, use_bias=self._use_bias,
+                                             weight_initializer=weight_initializer, in_units=self._value_units*2,
+                                             bias_initializer=bias_initializer, prefix='value_')
+
 
     def __call__(self, query, key, value=None, mask=None):
         """Compute the attention.
@@ -550,9 +589,13 @@ class MultiMemoryAttentionCell(AttentionCell):
         if self._num_heads == 1:
             key = key.reshape(shape=(-3, -2))
         else:
-            key = self.proj_key(key)
-            key = F.transpose(key.reshape(shape=(0, 0, 0, self._num_heads, -1)),
-                              axes=(0, 1, 3, 2, 4))\
+            key = F.transpose(key.reshape((0, 0, 0, 0)), axes=(1, 0, 2, 3))
+            flatten_key = key.reshape(shape=(0, -3, 0))
+            flatten_key = self.proj_key(flatten_key)
+            key = F.transpose(F.reshape_like(flatten_key, key.slice_axis(axis=-1, begin=0, end=self._key_units))\
+                               .reshape(shape=(0, 0, 0, self._num_heads, -1)),
+            #key = F.transpose(key.reshape(shape=(0, -4, self._batch_size, -1, -4, self._num_heads, -1)),
+                              axes=(1, 0, 3, 2, 4))\
                    .reshape(shape=(-1, 0, 0), reverse=True)
         if mask is not None:
             mask = F.broadcast_axis(F.expand_dims(mask, axis=1),
@@ -566,9 +609,13 @@ class MultiMemoryAttentionCell(AttentionCell):
         if self._num_heads == 1:
             value = value.reshape(shape=(-3, -2))
         else:
-           value = self.proj_value(value)
-           value = F.transpose(value.reshape(shape=(0, 0, 0, self._num_heads, -1)),
-                               axes=(0, 1, 3, 2, 4))\
+           value = F.transpose(value.reshape((0, 0, 0, 0)), axes=(1, 0, 2, 3))
+           flatten_value = value.reshape(shape=(0, -3, 0))
+           flatten_value = self.proj_value(flatten_value)
+           value = F.transpose(F.reshape_like(flatten_value, value.slice_axis(axis=-1, begin=0, end=self._value_units))\
+                                .reshape(shape=(0, 0, 0, self._num_heads, -1)),
+           #value = F.transpose(value.reshape(shape=(0, -4, self._batch_size, -1, -4, self._num_heads, -1)),
+                               axes=(1, 0, 3, 2, 4))\
                     .reshape(shape=(-1, 0, 0), reverse=True)
         context_vec = self._base_cell._read_by_weight(F, att_weights, value)
         context_vec = F.transpose(context_vec.reshape(shape=(-1, self._num_memories * self._num_heads, 0, 0),
