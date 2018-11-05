@@ -32,7 +32,7 @@ def _pad_arrs_to_max_length(arrs, pad_axis, pad_val, use_shared_mem, dtype):
     Parameters
     ----------
     arrs : list
-    pad_axis : int
+    pad_axis : int or list
     pad_val : number
     use_shared_mem : bool, default False
 
@@ -49,24 +49,48 @@ def _pad_arrs_to_max_length(arrs, pad_axis, pad_val, use_shared_mem, dtype):
     else:
         dtype = arrs[0].dtype if dtype is None else dtype
 
-    original_length = [ele.shape[pad_axis] for ele in arrs]
-    max_size = max(original_length)
-
     ret_shape = list(arrs[0].shape)
-    ret_shape[pad_axis] = max_size
+    if isinstance(pad_axis, int):
+        original_length = [ele.shape[pad_axis] for ele in arrs]
+        max_size = max(original_length)
+        ret_shape[pad_axis] = max_size
+    elif isinstance(pad_axis, (tuple, list)):
+        original_length = [[ele.shape[axis] for axis in pad_axis] for ele in arrs]
+        max_size = np.max(original_length, axis=0)
+        for i, axis in enumerate(pad_axis):
+            ret_shape[axis] = max_size[i]
+    else:
+        raise NotImplementedError
     ret_shape = (len(arrs), ) + tuple(ret_shape)
-
     ret = np.full(shape=ret_shape, fill_value=pad_val, dtype=dtype)
 
     for i, arr in enumerate(arrs):
-        if arr.shape[pad_axis] == max_size:
-            ret[i] = arr
+        if isinstance(pad_axis, int):
+            if arr.shape[pad_axis] == max_size:
+                ret[i] = arr
+            else:
+                slices = [slice(None) for _ in range(arr.ndim)]
+                slices[pad_axis] = slice(0, arr.shape[pad_axis])
+                if slices[pad_axis].start != slices[pad_axis].stop:
+                    slices = [slice(i, i + 1)] + slices
+                    ret[tuple(slices)] = arr
+        elif isinstance(pad_axis, (tuple, list)):
+            is_shape_match = [arr.shape[axis] == size for axis, size in zip(pad_axis, max_size)]
+            if min(is_shape_match):
+                ret[i] = arr
+            else:
+                slices = [slice(None) for _ in range(arr.ndim)]
+                is_empty = False
+                for j, match in enumerate(is_shape_match):
+                    if not match:
+                        slices[pad_axis[j]] = slice(0, arr.shape[pad_axis[j]])
+                        if slices[pad_axis[j]].start == slices[pad_axis[j]].stop:
+                            is_empty = True
+                if not is_empty:
+                    slices = [slice(i, i + 1)] + slices
+                    ret[tuple(slices)] = arr
         else:
-            slices = [slice(None) for _ in range(arr.ndim)]
-            slices[pad_axis] = slice(0, arr.shape[pad_axis])
-            if slices[pad_axis].start != slices[pad_axis].stop:
-                slices = [slice(i, i + 1)] + slices
-                ret[tuple(slices)] = arr
+            raise NotImplementedError
 
     ctx = mx.Context('cpu_shared', 0) if use_shared_mem else mx.cpu()
     ret = mx.nd.array(ret, ctx=ctx, dtype=dtype)
@@ -209,9 +233,10 @@ class Pad(object):
     """
     def __init__(self, axis=0, pad_val=0, ret_length=False, dtype=None):
         self._axis = axis
-        assert isinstance(axis, int), 'axis must be an integer! ' \
-                                      'Received axis=%s, type=%s.' % (str(axis),
-                                                                      str(type(axis)))
+        assert isinstance(axis, int) or (isinstance(axis, (tuple, list))
+                                         and isinstance(a, int) for a in axis), \
+            'axis must be an integer or a list of integrs!' \
+            ' Received axis=%s, type=%s.' % (str(axis), str(type(axis)))
         self._pad_val = pad_val
         self._ret_length = ret_length
         self._dtype = dtype
