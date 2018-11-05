@@ -189,7 +189,7 @@ train_data_loader = ShardedDataLoader(data_train,
 val_data_loader = DataLoader(data_val,
                              batch_sampler=val_batch_sampler,
                              batchify_fn=val_batchify_fn,
-                             num_workers=4)
+                             num_workers=1)
 
 
 # Build the model
@@ -198,7 +198,7 @@ model = DeepRoutingNetwork(graph.size, args.emsize, args.nhid,
                            args.gcn_nlayers, args.enc_nlayers,
                            graph.size, args.nheads, args.dropout)
 model.initialize(init=mx.init.Xavier(magnitude=args.magnitude), ctx=context)
-#model.hybridize(static_alloc=True)
+model.hybridize(static_alloc=True)
 
 loss_function = SoftmaxCEMaskedLoss()
 loss_function.hybridize(static_alloc=True)
@@ -298,17 +298,6 @@ def train():
                     Ls.append((ls * src.shape[1]) / args.batch_size / 100.0)
             for L in Ls:
                 L.backward()
-            # ll = Ls[0].asscalar()
-            # if epoch_id >= 19 and batch_id >= 60:
-            #     grads = [p.grad() if p.grad_req != 'null' else None for p in model.collect_params().values()]
-            #     print(grads)
-            # if np.isnan(ll):
-            #     save_path = os.path.join(args.save_dir, 'nan')
-            #     grads = [p.grad() if p.grad_req != 'null' else None for p in model.collect_params().values()]
-            #     print(grads)
-            #     with open(save_path, 'wb') as f:
-            #         pickle.dump(grads, f, pickle.HIGHEST_PROTOCOL)
-            #     os._exit()
             if batch_id % grad_interval == grad_interval - 1 or\
                     batch_id == len(train_data_loader) - 1:
                 if average_param_dict is None:

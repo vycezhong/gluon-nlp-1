@@ -35,7 +35,7 @@ class DeepRoutingNetwork(Block):
         super(DeepRoutingNetwork, self).__init__(prefix=prefix, params=params)
         self.graph_size = graph_size
         self.embed_size = embed_size
-        self.gcn = GCN(embed_size, num_gcn_layers)
+        self.gcn = GCN(graph_size, embed_size, num_gcn_layers)
         self.encoder = TransformerEncoder(num_layers=num_encoder_layers,
                                           num_heads=num_heads,
                                           max_length=max_length,

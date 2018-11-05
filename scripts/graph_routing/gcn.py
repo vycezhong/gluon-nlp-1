@@ -35,13 +35,17 @@ class GCNLayer(HybridBlock):
 
 
 class GCN(HybridBlock):
-    def __init__(self, embed_size, num_layers, **kwargs):
+    def __init__(self, graph_size, embed_size, num_layers, **kwargs):
         super(GCN, self).__init__(**kwargs)
+        self.graph_size = graph_size
+        self.embed_size = embed_size
         self.layers = nn.HybridSequential('GCN')
         for _ in range(num_layers):
             self.layers.add(GCNLayer(embed_size))
 
     def hybrid_forward(self, F, x, adjacency_matrix):
+        x0 = F.zeros((self.graph_size, self.embed_size))
+        x = F.concat(x0, x, dim=1)
         for layer in self.layers:
             x = layer(x, adjacency_matrix)
         return x
