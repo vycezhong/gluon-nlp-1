@@ -39,8 +39,8 @@ class DeepRoutingNetwork(Block):
         self.encoder = TransformerEncoder(num_layers=num_encoder_layers,
                                           num_heads=num_heads,
                                           max_length=max_length,
-                                          units=embed_size,
-                                          hidden_size=hidden_size,
+                                          units=embed_size * 2,
+                                          hidden_size=hidden_size * 2,
                                           dropout=dropout,
                                           prefix=prefix + 'enc_', params=params)
         self.dense = nn.Dense(embed_size, use_bias=False, flatten=False)
