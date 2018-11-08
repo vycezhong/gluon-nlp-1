@@ -43,7 +43,7 @@ class DeepRoutingNetwork(Block):
                                           hidden_size=hidden_size,
                                           dropout=dropout,
                                           prefix=prefix + 'enc_', params=params)
-        #self.dense = nn.Dense(embed_size, use_bias=False, flatten=False)
+        self.dense = nn.Dense(embed_size, use_bias=False, flatten=False)
         self.proj = MLP()
 
     def lookup_embeddings(self, seq, neighbors, destinations, embeddings):
@@ -77,13 +77,13 @@ class DeepRoutingNetwork(Block):
         """
         inputs, neighbors, destinations = self.lookup_embeddings(inputs, neighbors, destinations,
                                                                  embeddings)
-        inputs = inputs + mx.nd.expand_dims(destinations, axis=1)
-        #destinations = mx.nd.broadcast_axes(mx.nd.expand_dims(destinations, axis=1), axis=1, size=inputs.shape[1])
-        #inputs = mx.nd.concat(inputs, destinations, dim=2)
+        #inputs = inputs + mx.nd.expand_dims(destinations, axis=1)
+        destinations = mx.nd.broadcast_axes(mx.nd.expand_dims(destinations, axis=1), axis=1, size=inputs.shape[1])
+        inputs = mx.nd.concat(inputs, destinations, dim=2)
         outputs, states, additional_outputs =\
             self.encoder.encode_seq(inputs=inputs,
                                     valid_length=valid_length)
-        #outputs = self.dense(outputs)
+        outputs = self.dense(outputs)
         batch_size = outputs.shape[0]
         outputs = self.proj(outputs, neighbors)
         outputs = outputs.reshape((-4, batch_size, -1, 0))
@@ -100,8 +100,8 @@ class DeepRoutingNetwork(Block):
             Shape (batch_size, degree)
         destinations : NDArray
             Shape (batch_size,)
-        states : list of NDArrays
         embeddings : NDArray
+        states : list of NDArrays
 
         Returns
         -------

@@ -33,6 +33,7 @@ from gluonnlp.data import ShardedDataLoader
 from gluonnlp.data import ExpWidthBucket, FixedBucketSampler
 from mxnet.gluon.data import DataLoader, SimpleDataset
 from deep_routing_model import DeepRoutingNetwork
+from route_searcher import RouteSearcher
 from loss import SoftmaxCEMaskedLoss
 from utils import logging_config
 from graph import Graph
@@ -57,6 +58,8 @@ parser.add_argument('--epochs', type=int, default=50,
                     help='upper epoch limit')
 parser.add_argument('--batch_size', type=int, default=1000, metavar='N',
                     help='Batch size. Number of nodes per gpu in a minibatch')
+parser.add_argument('--test_batch_size', type=int, default=128, metavar='N',
+                    help='Test batch size. Number of samples per gpu in a minibatch')
 parser.add_argument('--num_buckets', type=int, default=10, help='Bucket number')
 parser.add_argument('--dropout', type=float, default=0.1,
                     help='dropout applied to layers (0 = no dropout)')
@@ -174,10 +177,10 @@ train_batch_sampler = FixedBucketSampler(lengths=data_train_lengths,
 print(train_batch_sampler.stats())
 
 val_batch_sampler = FixedBucketSampler(lengths=data_val_lengths,
-                                       batch_size=args.batch_size * 4,
+                                       batch_size=args.test_batch_size,
                                        num_buckets=args.num_buckets,
                                        shuffle=False,
-                                       use_average_length=True,
+                                       use_average_length=False,
                                        bucket_scheme=bucket_scheme)
 print(val_batch_sampler.stats())
 
@@ -202,6 +205,8 @@ model.hybridize(static_alloc=True)
 
 loss_function = SoftmaxCEMaskedLoss()
 loss_function.hybridize(static_alloc=True)
+
+searcher = RouteSearcher(model, graph)
 
 print(model)
 
@@ -240,6 +245,8 @@ def evaluate(data_loader, ctx=context[0]):
     avg_loss_denom = 0
     avg_loss = 0.0
     embeddings = model.compute_embeddings(positions, adjacency_matrix)
+    searcher.embeddings = embeddings
+    accuracy = 0
     for src, tgt, neighbors, destinations, valid_length, valid_target in data_loader:
         src = src.as_in_context(ctx)
         tgt = tgt.as_in_context(ctx)
@@ -253,8 +260,14 @@ def evaluate(data_loader, ctx=context[0]):
         loss = (loss * src.shape[1]) / (valid_length - 1)
         avg_loss += loss.sum().asscalar()
         avg_loss_denom += src.shape[0]
+        # Route search
+        samples, _ = searcher.search(src[:, 0], destinations)
+        for sample, seq in zip(samples, tgt):
+            if sample[1:] == seq.astype('int32', copy=False).asnumpy().tolist():
+                accuracy += 1
     avg_loss = avg_loss / avg_loss_denom
-    return avg_loss
+    accuracy /= avg_loss_denom
+    return avg_loss, accuracy
 
 
 def train():
@@ -329,9 +342,9 @@ def train():
                 log_avg_loss = 0
                 log_wc = 0
         mx.nd.waitall()
-        valid_loss = evaluate(val_data_loader, context[0])
-        logging.info('[Epoch {}] valid Loss={:.4f}, valid ppl={:.4f}'
-                     .format(epoch_id, valid_loss, np.exp(valid_loss)))
+        valid_loss, accuracy = evaluate(val_data_loader, context[0])
+        logging.info('[Epoch {}] valid Loss={:.4f}, valid ppl={:.4f}, accuracy={:.4f}'
+                     .format(epoch_id, valid_loss, np.exp(valid_loss), accuracy))
         if valid_loss < best_valid_loss:
             best_valid_loss = valid_loss
             save_path = os.path.join(args.save_dir, 'valid_best.params')
@@ -362,7 +375,8 @@ if __name__ == '__main__':
             v.set_data(average_param_dict[k])
     else:
         model.load_parameters(os.path.join(args.save_dir, 'valid_best.params'), context)
-    final_val_L = evaluate(val_data_loader, context[0])
-    logging.info('Best model valid Loss={:.4f}, valid ppl={:.4f}'
-                 .format(final_val_L, np.exp(final_val_L)))
+    final_val_L, final_accuracy = evaluate(val_data_loader, context[0])
+    logging.info('Best model valid Loss={:.4f}, valid ppl={:.4f}, accuracy={:.4f}'
+                 .format(final_val_L, np.exp(final_val_L), final_accuracy))
     logging.info('Total time cost {:.2f}h'.format((time.time()-start_pipeline_time)/3600))
+    searcher._sampler.stop_threads()
