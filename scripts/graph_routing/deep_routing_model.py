@@ -113,9 +113,11 @@ class DeepRoutingNetwork(Block):
         """
         step_input, neighbors, destinations = self.lookup_embeddings(step_input, neighbors, destinations,
                                                                      embeddings)
-        step_input = step_input + destinations
+        #step_input = step_input + destinations
+        step_input = mx.nd.concat(step_input, destinations, dim=1)
         step_output, states, step_additional_outputs =\
             self.encoder(step_input, states)
+        step_output = self.dense(step_output)
         step_output = self.proj(mx.nd.expand_dims(step_output, axis=1),
                                 mx.nd.expand_dims(neighbors, axis=1))
         return step_output, states, step_additional_outputs
