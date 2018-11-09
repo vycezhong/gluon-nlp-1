@@ -58,7 +58,7 @@ parser.add_argument('--epochs', type=int, default=50,
                     help='upper epoch limit')
 parser.add_argument('--batch_size', type=int, default=1000, metavar='N',
                     help='Batch size. Number of nodes per gpu in a minibatch')
-parser.add_argument('--test_batch_size', type=int, default=128, metavar='N',
+parser.add_argument('--test_batch_size', type=int, default=32, metavar='N',
                     help='Test batch size. Number of samples per gpu in a minibatch')
 parser.add_argument('--num_buckets', type=int, default=10, help='Bucket number')
 parser.add_argument('--dropout', type=float, default=0.1,
@@ -228,7 +228,7 @@ trainer = gluon.Trainer(model.collect_params(), args.optimizer, trainer_params)
 ###############################################################################
 
 
-def evaluate(data_loader, ctx=context[0]):
+def evaluate(data_loader, ctx=context[0], search=False):
     """Evaluate given the data loader
 
     Parameters
@@ -261,10 +261,11 @@ def evaluate(data_loader, ctx=context[0]):
         avg_loss += loss.sum().asscalar()
         avg_loss_denom += src.shape[0]
         # Route search
-        samples, _ = searcher.search(src[:, 0], destinations)
-        for sample, seq in zip(samples, tgt):
-            if sample[1:] == seq.astype('int32', copy=False).asnumpy().tolist():
-                accuracy += 1
+        if search:
+            samples, _ = searcher.search(src[:, 0], destinations)
+            for sample, seq in zip(samples, tgt):
+                if sample[1:] == seq.astype('int32', copy=False).asnumpy().tolist():
+                    accuracy += 1
     avg_loss = avg_loss / avg_loss_denom
     accuracy /= avg_loss_denom
     return avg_loss, accuracy
@@ -375,7 +376,7 @@ if __name__ == '__main__':
             v.set_data(average_param_dict[k])
     else:
         model.load_parameters(os.path.join(args.save_dir, 'valid_best.params'), context)
-    final_val_L, final_accuracy = evaluate(val_data_loader, context[0])
+    final_val_L, final_accuracy = evaluate(val_data_loader, context[0], search=True)
     logging.info('Best model valid Loss={:.4f}, valid ppl={:.4f}, accuracy={:.4f}'
                  .format(final_val_L, np.exp(final_val_L), final_accuracy))
     logging.info('Total time cost {:.2f}h'.format((time.time()-start_pipeline_time)/3600))

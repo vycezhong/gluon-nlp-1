@@ -44,7 +44,8 @@ class GCN(HybridBlock):
             self.layers.add(GCNLayer(embed_size))
 
     def hybrid_forward(self, F, x, adjacency_matrix):
-        x0 = F.ones((self.graph_size, self.embed_size))
+        #x0 = F.ones((self.graph_size, self.embed_size))
+        x0 = F.full((self.graph_size, self.embed_size), val=1./self.embed_size)
         x = F.concat(x0, x, dim=1)
         for layer in self.layers:
             x = layer(x, adjacency_matrix)
