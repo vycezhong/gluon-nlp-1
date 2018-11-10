@@ -86,6 +86,8 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='report interval')
 parser.add_argument('--save_dir', type=str, default='routing_out',
                     help='directory path to save the final model and training log')
+parser.add_argument('--use_synthetic', action='store_true',
+                    help='Use synthetic data')
 parser.add_argument('--eval_only', action='store_true',
                     help='Whether to only evaluate the trained model')
 parser.add_argument('--gpus', type=str,
@@ -123,9 +125,15 @@ def load_routing_data():
     with open('data/data.pkl', 'rb') as f:
         data = pickle.load(f)
     graph = Graph(data['nodes'], data['edges'], data['weights'], normalize=True)
-    trajectories = data['trajectories']
-    data_train = SimpleDataset([([node[1] for node in trajectory],
-                                 trajectory[-1][1]) for trajectory in trajectories])
+    if not args.use_synthetic:
+        trajectories = data['trajectories']
+        data_train = SimpleDataset([([node[1] for node in trajectory],
+                                     trajectory[-1][1]) for trajectory in trajectories])
+    else:
+        with open('data/synthetic.pkl', 'rb') as f:
+            trajectories = pickle.load(f)
+        data_train = SimpleDataset([(trajectory, trajectory[-1])
+                                    for trajectory in trajectories])
     data_train, data_val = nlp.data.train_valid_split(data_train, args.valid_ratio)
     positions = mx.nd.array(graph.positions, ctx=context[0])
     adjacency_matrix = mx.nd.sparse.csr_matrix(graph.adjacency_matrix, dtype='float32', ctx=context[0])
@@ -219,7 +227,13 @@ elif args.optimizer == 'adam':
                       'wd': args.wd,
                       'beta1': 0,
                       'beta2': 0.999,
-                      'epsilon': 1e-9}
+                      'epsilon': 1e-8}
+elif args.optimizer == 'ftml':
+    trainer_params = {'learning_rate': args.lr,
+                      'wd': args.wd,
+                      'beta1': 0.6,
+                      'beta2': 0.999,
+                      'epsilon': 1e-8}
 
 trainer = gluon.Trainer(model.collect_params(), args.optimizer, trainer_params)
 
@@ -380,4 +394,4 @@ if __name__ == '__main__':
     logging.info('Best model valid Loss={:.4f}, valid ppl={:.4f}, accuracy={:.4f}'
                  .format(final_val_L, np.exp(final_val_L), final_accuracy))
     logging.info('Total time cost {:.2f}h'.format((time.time()-start_pipeline_time)/3600))
-    searcher._sampler.stop_threads()
+
