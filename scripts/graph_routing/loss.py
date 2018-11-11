@@ -19,8 +19,6 @@
 """Loss functions."""
 
 import numpy as np
-import mxnet as mx
-from mxnet.gluon import HybridBlock
 from mxnet.gluon.loss import SoftmaxCELoss
 
 __all__ = ['SoftmaxCEMaskedLoss']

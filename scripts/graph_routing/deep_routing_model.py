@@ -19,7 +19,6 @@
 
 import mxnet as mx
 from mxnet.gluon import nn, Block, HybridBlock
-from mxnet import autograd
 from gcn import GCN
 from transformer import TransformerEncoder
 from rnn import RNN
