@@ -374,6 +374,10 @@ def train():
             save_path = os.path.join(args.save_dir, 'valid_best.params')
             logging.info('Save best parameters to {}'.format(save_path))
             model.save_parameters(save_path)
+        else:
+            if args.enc_model != 'transformer':
+                new_lr = trainer.learning_rate * 0.8
+                trainer.set_learning_rate(new_lr)
         save_path = os.path.join(args.save_dir, 'epoch{:d}.params'.format(epoch_id))
         model.save_parameters(save_path)
     save_path = os.path.join(args.save_dir, 'average.params')
