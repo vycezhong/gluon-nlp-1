@@ -114,7 +114,7 @@ class RNN(Block):
             the state with shape `(num_layers, batch_size, num_hidden)`
         """
         if not begin_state:
-            begin_state = self.begin_state(batch_size=inputs.shape[1])
+            begin_state = self.begin_state(batch_size=inputs.shape[1], ctx=inputs.context)
         encoded, state = self.encoder(inputs, begin_state)
         if self._dropout:
             encoded = mx.nd.Dropout(encoded, p=self._dropout, axes=(0,))
