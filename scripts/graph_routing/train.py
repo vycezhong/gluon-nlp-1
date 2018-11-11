@@ -133,7 +133,8 @@ def load_routing_data():
         with open('data/synthetic.pkl', 'rb') as f:
             trajectories = pickle.load(f)
         data_train = SimpleDataset([(trajectory, trajectory[-1])
-                                    for trajectory in trajectories])
+                                    for trajectory in trajectories[:100000]])
+    print('spliting data ...')
     data_train, data_val = nlp.data.train_valid_split(data_train, args.valid_ratio)
     positions = mx.nd.array(graph.positions, ctx=context[0])
     adjacency_matrix = mx.nd.sparse.csr_matrix(graph.adjacency_matrix, dtype='float32', ctx=context[0])
@@ -188,7 +189,7 @@ val_batch_sampler = FixedBucketSampler(lengths=data_val_lengths,
                                        batch_size=args.test_batch_size,
                                        num_buckets=args.num_buckets,
                                        shuffle=False,
-                                       use_average_length=False,
+                                       use_average_length=True,
                                        bucket_scheme=bucket_scheme)
 print(val_batch_sampler.stats())
 
@@ -277,8 +278,12 @@ def evaluate(data_loader, ctx=context[0], search=False):
         # Route search
         if search:
             samples, _ = searcher.search(src[:, 0], destinations)
-            for sample, seq in zip(samples, tgt):
-                if sample[1:] == seq.astype('int32', copy=False).asnumpy().tolist():
+            src = src.astype('int32', copy=False).asnumpy().tolist()
+            destinations = destinations.astype('int32', copy=False).asnumpy().tolist()
+            valid_length = valid_length.astype('int32', copy=False).asnumpy().tolist() 
+            for sample, seq, dest, length in zip(samples, src, destinations, valid_length):
+                seq = seq[:(length - 1)] + [dest]
+                if sample == seq:
                     accuracy += 1
     avg_loss = avg_loss / avg_loss_denom
     accuracy /= avg_loss_denom
@@ -394,4 +399,4 @@ if __name__ == '__main__':
     logging.info('Best model valid Loss={:.4f}, valid ppl={:.4f}, accuracy={:.4f}'
                  .format(final_val_L, np.exp(final_val_L), final_accuracy))
     logging.info('Total time cost {:.2f}h'.format((time.time()-start_pipeline_time)/3600))
-
+    searcher._sampler.stop_threads()

@@ -23,6 +23,7 @@ from __future__ import print_function
 __all__ = ['RouteSearchSampler']
 
 from multiprocessing.dummy import Pool as ThreadPool
+import threading
 import mxnet as mx
 import heapq
 
@@ -50,6 +51,7 @@ class RouteSearchSampler(object):
         self._decoder = decoder
         self._graph = graph
         self._pool = ThreadPool(32)
+        self._lock = threading.Lock()
 
     def _dijkstra(self, s, d):
         q, seen = [(0, s.asscalar(), [])], set()
@@ -67,7 +69,8 @@ class RouteSearchSampler(object):
                 step_input[0] = v1
                 neighbors = self._graph.get_neighbors(v1)
                 nd_neighbors = mx.nd.array([neighbors], ctx=ctx)
-                log_probs, states = self._decoder(step_input, nd_neighbors, d, states)
+                with self._lock:
+                    log_probs, states = self._decoder(step_input, nd_neighbors, d, states)
                 log_probs = log_probs.asnumpy()[0]
                 for i in range(len(neighbors)):
                     v2 = neighbors[i]
