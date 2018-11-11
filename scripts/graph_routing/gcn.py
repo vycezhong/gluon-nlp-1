@@ -24,8 +24,9 @@ __all__ = ['GCNLayer', 'GCN']
 class GCNLayer(HybridBlock):
     def __init__(self, embed_size, **kwargs):
         super(GCNLayer, self).__init__(**kwargs)
-        self.dense1 = nn.Dense(embed_size, use_bias=False, flatten=False)
-        self.dense2 = nn.Dense(embed_size, use_bias=False, flatten=False)
+        with self.name_scope():
+            self.dense1 = nn.Dense(embed_size, use_bias=False, flatten=False)
+            self.dense2 = nn.Dense(embed_size, use_bias=False, flatten=False)
 
     def hybrid_forward(self, F, x, adjacency_matrix):
         x1 = self.dense1(x)
@@ -39,9 +40,10 @@ class GCN(HybridBlock):
         super(GCN, self).__init__(**kwargs)
         self.graph_size = graph_size
         self.embed_size = embed_size
-        self.layers = nn.HybridSequential('GCN')
-        for _ in range(num_layers):
-            self.layers.add(GCNLayer(embed_size))
+        with self.name_scope():
+            self.layers = nn.HybridSequential('GCN')
+            for _ in range(num_layers):
+                self.layers.add(GCNLayer(embed_size))
 
     def hybrid_forward(self, F, x, adjacency_matrix):
         #x0 = F.ones((self.graph_size, self.embed_size))

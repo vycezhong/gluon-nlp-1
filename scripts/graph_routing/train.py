@@ -44,11 +44,15 @@ mx.random.seed(10000)
 
 parser = argparse.ArgumentParser(description=
                                  'MXNet Deep Routing Model.')
+parser.add_argument('--enc_model', type=str, default='transformer',
+                    help='Encoder model')
+parser.add_argument('--concat', action='store_true',
+                    help='Concatenate input node and destination node embeddings')
 parser.add_argument('--emsize', type=int, default=128,
                     help='size of word embeddings')
 parser.add_argument('--nhid', type=int, default=512,
                     help='number of hidden units per layer in encoder')
-parser.add_argument('--gcn_nlayers', type=int, default=3,
+parser.add_argument('--gcn_nlayers', type=int, default=10,
                     help='number of gcn layers')
 parser.add_argument('--enc_nlayers', type=int, default=3,
                     help='number of encoder layers')
@@ -58,10 +62,10 @@ parser.add_argument('--epochs', type=int, default=50,
                     help='upper epoch limit')
 parser.add_argument('--batch_size', type=int, default=1000, metavar='N',
                     help='Batch size. Number of nodes per gpu in a minibatch')
-parser.add_argument('--test_batch_size', type=int, default=32, metavar='N',
+parser.add_argument('--test_batch_size', type=int, default=5000, metavar='N',
                     help='Test batch size. Number of samples per gpu in a minibatch')
 parser.add_argument('--num_buckets', type=int, default=10, help='Bucket number')
-parser.add_argument('--dropout', type=float, default=0.1,
+parser.add_argument('--dropout', type=float, default=0.0,
                     help='dropout applied to layers (0 = no dropout)')
 parser.add_argument('--wd', type=float, default=0,
                     help='weight decay applied to all weights')
@@ -206,8 +210,8 @@ val_data_loader = DataLoader(data_val,
 
 # Build the model
 
-model = DeepRoutingNetwork(graph.size, args.emsize, args.nhid,
-                           args.gcn_nlayers, args.enc_nlayers,
+model = DeepRoutingNetwork(args.enc_model, graph.size, args.emsize, args.nhid,
+                           args.concat, args.gcn_nlayers, args.enc_nlayers,
                            graph.size, args.nheads, args.dropout)
 model.initialize(init=mx.init.Xavier(magnitude=args.magnitude), ctx=context)
 model.hybridize(static_alloc=True)
@@ -311,7 +315,7 @@ def train():
         log_start_time = time.time()
         for batch_id, seqs \
                 in enumerate(train_data_loader):
-            if batch_id % grad_interval == 0:
+            if batch_id % grad_interval == 0 and args.enc_model == 'transformer':
                 step_num += 1
                 new_lr = args.lr / math.sqrt(args.emsize) \
                          * min(1. / math.sqrt(step_num), step_num * warmup_steps ** (-1.5))
@@ -399,4 +403,4 @@ if __name__ == '__main__':
     logging.info('Best model valid Loss={:.4f}, valid ppl={:.4f}, accuracy={:.4f}'
                  .format(final_val_L, np.exp(final_val_L), final_accuracy))
     logging.info('Total time cost {:.2f}h'.format((time.time()-start_pipeline_time)/3600))
-    searcher._sampler.stop_threads()
+

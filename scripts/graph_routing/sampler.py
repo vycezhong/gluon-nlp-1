@@ -88,3 +88,7 @@ class RouteSearchSampler(object):
     def stop_threads(self):
         self._pool.close()
         self._pool.join()
+
+    def __del__(self):
+        self.stop_threads()
+
