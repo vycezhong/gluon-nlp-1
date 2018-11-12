@@ -69,6 +69,8 @@ parser.add_argument('--dropout', type=float, default=0.0,
                     help='dropout applied to layers (0 = no dropout)')
 parser.add_argument('--wd', type=float, default=0,
                     help='weight decay applied to all weights')
+parser.add_argument('--clip', type=float, default=0,
+                    help='Gradient clip')
 parser.add_argument('--lr', type=float, default=1.0, help='Initial learning rate')
 parser.add_argument('--warmup_steps', type=float, default=8000,
                     help='number of warmup steps used in NOAM\'s stepsize schedule')
@@ -315,11 +317,12 @@ def train():
         log_start_time = time.time()
         for batch_id, seqs \
                 in enumerate(train_data_loader):
-            if batch_id % grad_interval == 0 and args.enc_model == 'transformer':
+            if batch_id % grad_interval == 0:
                 step_num += 1
-                new_lr = args.lr / math.sqrt(args.emsize) \
-                         * min(1. / math.sqrt(step_num), step_num * warmup_steps ** (-1.5))
-                trainer.set_learning_rate(new_lr)
+                if args.enc_model == 'transformer':
+                    new_lr = args.lr / math.sqrt(args.emsize)\
+                             * min(1. / math.sqrt(step_num), step_num * warmup_steps ** (-1.5))
+                    trainer.set_learning_rate(new_lr)
             wc, bs = np.sum([(shard[4].sum(), shard[0].shape[0]) for shard in seqs], axis=0)
             wc = wc.asscalar()
             loss_denom += wc - bs
@@ -340,6 +343,9 @@ def train():
                 if average_param_dict is None:
                     average_param_dict = {k: v.data(context[0]).copy() for k, v in
                                           model.collect_params().items()}
+                if args.clip:
+                    grads = [p.grad(context[0]) for p in model.collect_params().values()]
+                    gluon.utils.clip_global_norm(grads, args.clip)
                 trainer.step(float(loss_denom) / args.batch_size / 100.0)
                 param_dict = model.collect_params()
                 param_dict.zero_grad()
@@ -376,7 +382,7 @@ def train():
             model.save_parameters(save_path)
         else:
             if args.enc_model != 'transformer':
-                new_lr = trainer.learning_rate * 0.8
+                new_lr = trainer.learning_rate * 0.9
                 trainer.set_learning_rate(new_lr)
         save_path = os.path.join(args.save_dir, 'epoch{:d}.params'.format(epoch_id))
         model.save_parameters(save_path)
@@ -389,6 +395,7 @@ if __name__ == '__main__':
     if not args.eval_only:
         train()
     if args.average_checkpoint:
+        model.load_parameters(os.path.join(args.save_dir, 'epoch0.params'))
         for j in range(args.num_averages):
             params = mx.nd.load(os.path.join(args.save_dir,
                                              'epoch{:d}.params'.format(args.epochs - j - 1)))
