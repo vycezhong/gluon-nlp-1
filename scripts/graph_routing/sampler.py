@@ -80,23 +80,31 @@ class RouteSearchSampler(object):
         return tuple([[], float("inf")])
 
     def _greedy(self, s, d):
-        cost = 0
-        path = []
         step_input = s
         v = s.asscalar()
         ds = d.asscalar()
         ctx = s.context
+        states = []
+        cost = 0
+        path = [v]
         while v != ds:
             step_input[0] = v
             neighbors = self._graph.get_neighbors(v)
             nd_neighbors = mx.nd.array([neighbors], ctx=ctx)
             with self._lock:
                 log_probs, states = self._decoder(step_input, nd_neighbors, d, states)
+            ind = int(mx.nd.argmax(log_probs, axis=1).asscalar())
+            v = neighbors[ind]
+            if v in path:
+                break
+            path = path + [v]
+            cost += -log_probs[0, ind].asscalar()
+        return tuple([path, cost])
 
     def __call__(self, sources, destinations):
         sources = sources.astype('int32', copy=False)
         destinations = destinations.astype('int32', copy=False)
-        samples, scores = list(zip(*self._pool.starmap(self._greedy, zip(sources, destinations))))
+        samples, scores = list(zip(*self._pool.starmap(self._dijkstra, zip(sources, destinations))))
         return samples, scores
 
     def stop_threads(self):
