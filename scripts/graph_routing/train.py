@@ -413,8 +413,8 @@ if __name__ == '__main__':
         average_param_dict = mx.nd.load(save_path)
         for k, v in model.collect_params().items():
             v.set_data(average_param_dict[k])
-    #else:
-    #    model.load_parameters(os.path.join(args.save_dir, 'valid_best.params'), context)
+    else:
+        model.load_parameters(os.path.join(args.save_dir, 'valid_best.params'), context)
     final_val_L, final_accuracy = evaluate(val_data_loader, context[0], search=True)
     logging.info('Best model valid Loss={:.4f}, valid ppl={:.4f}, accuracy={:.4f}'
                  .format(final_val_L, np.exp(final_val_L), final_accuracy))
