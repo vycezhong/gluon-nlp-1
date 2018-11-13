@@ -64,6 +64,8 @@ parser.add_argument('--batch_size', type=int, default=1000, metavar='N',
                     help='Batch size. Number of nodes per gpu in a minibatch')
 parser.add_argument('--test_batch_size', type=int, default=5000, metavar='N',
                     help='Test batch size. Number of samples per gpu in a minibatch')
+parser.add_argument('--beam_size', type=int, default=4,
+                    help='Beam size in route search')
 parser.add_argument('--num_buckets', type=int, default=10, help='Bucket number')
 parser.add_argument('--dropout', type=float, default=0.0,
                     help='dropout applied to layers (0 = no dropout)')
@@ -221,7 +223,7 @@ model.hybridize(static_alloc=True)
 loss_function = SoftmaxCEMaskedLoss()
 loss_function.hybridize(static_alloc=True)
 
-searcher = RouteSearcher(model, graph)
+searcher = RouteSearcher(model, graph, beam_size=args.beam_size)
 
 print(model)
 
@@ -283,13 +285,16 @@ def evaluate(data_loader, ctx=context[0], search=False):
         avg_loss_denom += src.shape[0]
         # Route search
         if search:
-            samples, _ = searcher.search(src[:, 0], destinations)
-            src = src.astype('int32', copy=False).asnumpy().tolist()
-            destinations = destinations.astype('int32', copy=False).asnumpy().tolist()
-            valid_length = valid_length.astype('int32', copy=False).asnumpy().tolist() 
-            for sample, seq, dest, length in zip(samples, src, destinations, valid_length):
-                seq = seq[:(length - 1)] + [dest]
-                if sample == seq:
+            samples, _, sample_valid_length = searcher.search(src[:, 0], destinations)
+            max_score_sample = samples[:, 0, :].asnumpy()
+            sample_valid_length = sample_valid_length[:, 0].asnumpy()
+            src = src.astype('int32', copy=False).asnumpy()
+            destinations = destinations.astype('int32', copy=False).asnumpy()
+            valid_length = valid_length.astype('int32', copy=False).asnumpy()
+            for i in range(max_score_sample.shape[0]):
+                sample = max_score_sample[i][:sample_valid_length[i]]
+                gt_seq = np.concatenate((src[i][:(valid_length[i] - 1)], [destinations[i]]))
+                if sample.tolist() == gt_seq.tolist():
                     accuracy += 1
     avg_loss = avg_loss / avg_loss_denom
     accuracy /= avg_loss_denom
@@ -408,8 +413,8 @@ if __name__ == '__main__':
         average_param_dict = mx.nd.load(save_path)
         for k, v in model.collect_params().items():
             v.set_data(average_param_dict[k])
-    else:
-        model.load_parameters(os.path.join(args.save_dir, 'valid_best.params'), context)
+    #else:
+    #    model.load_parameters(os.path.join(args.save_dir, 'valid_best.params'), context)
     final_val_L, final_accuracy = evaluate(val_data_loader, context[0], search=True)
     logging.info('Best model valid Loss={:.4f}, valid ppl={:.4f}, accuracy={:.4f}'
                  .format(final_val_L, np.exp(final_val_L), final_accuracy))

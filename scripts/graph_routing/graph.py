@@ -47,7 +47,7 @@ class Graph:
         """This function return the neighbor nodes
         :return [[int]] or [int]
         """
-        if isinstance(nodes, (tuple, list)):
+        if isinstance(nodes, (tuple, list, np.ndarray)):
             return [self._neighbors[node] for node in nodes]
         else:
             return self._neighbors[nodes]

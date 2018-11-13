@@ -30,12 +30,18 @@ class RouteSearcher(object):
     ----------
     model : Routing model
     """
-    def __init__(self, model, graph):
+    def __init__(self, model, graph, beam_size=1):
         self._model = model
         self._graph = graph
+        if hasattr(model.encoder, 'state_info'):
+            state_info = model.encoder.state_info()
+        else:
+            state_info = None
         self._sampler = RouteSearchSampler(
+            beam_size=beam_size,
             decoder=self._decode_logprob,
-            graph=graph)
+            graph=graph,
+            state_info=state_info)
         self._embedding = None
 
     def _decode_logprob(self, step_input, neighbors, destinations, states):
@@ -54,13 +60,17 @@ class RouteSearcher(object):
 
         Returns
         -------
-        samples : list[list[int]]
-            Samples draw by route sampler.
-        scores : list[int]
-            Scores of the samples.
+        samples : NDArray
+            Samples draw by beam search. Shape (batch_size, beam_size, length). dtype is int32.
+        scores : NDArray
+            Scores of the samples. Shape (batch_size, beam_size). We make sure that scores[i, :] are
+            in descending order.
+        valid_length : NDArray
+            The valid length of the samples. Shape (batch_size, beam_size). dtype will be int32.
         """
-        samples, scores = self._sampler(sources, destinations)
-        return samples, scores
+        states = []
+        samples, scores, valid_length = self._sampler(sources, destinations, states)
+        return samples, scores, valid_length
 
     @property
     def embeddings(self):
