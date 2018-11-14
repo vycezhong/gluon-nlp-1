@@ -135,7 +135,7 @@ class _RouteSearchStepUpdate(HybridBlock):
                        .reshape(shape=(-4, -1, beam_size, 0))
         new_valid_length = F.take(valid_length.reshape(shape=(-1,)),
                                   batch_beam_indices.reshape(shape=(-1,))).reshape((-1, beam_size))\
-                           + 1 - use_prev
+                           + 1 - F.broadcast_logical_or(use_prev, loop)
         # Update the states
         new_states = _choose_states(F, states, self._state_info, batch_beam_indices.reshape((-1,)))
         # Update the alive mask.
