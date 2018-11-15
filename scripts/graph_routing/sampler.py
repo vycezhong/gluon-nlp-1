@@ -97,6 +97,9 @@ class _RouteSearchStepUpdate(HybridBlock):
                                  sequence_length=valid_targets,
                                  use_sequence_length=True, axis=1,
                                  value=LARGE_NEGATIVE_FLOAT)
+        loop = F.broadcast_equal(F.expand_dims(neighbors.reshape((-4, -1, beam_size, 0)), axis=-1),
+                                 F.expand_dims(samples, axis=-2)).max(axis=-1).reshape((-3, 0))
+        outputs = F.where(loop, F.ones_like(outputs) * LARGE_NEGATIVE_FLOAT, outputs)
         candidate_scores = F.broadcast_add(outputs.reshape(shape=(-4, -1, beam_size, 0)),
                                            F.expand_dims(scores, axis=-1))
         # Concat the candidate scores and the scores of the finished beams
@@ -122,12 +125,18 @@ class _RouteSearchStepUpdate(HybridBlock):
                                   batch_beam_indices.reshape(shape=(-1,)))
         chosen_neighbors = F.take(neighbors,
                                   batch_beam_indices.reshape(shape=(-1,)))
+        # Determine loop
+        loop = F.take(loop, batch_beam_indices.reshape(shape=(-1,)))
+        loop = F.pick(loop, chosen_node_ids.reshape(shape=(-1, 1)),
+                      axis=1).reshape(shape=(-4, -1, beam_size))
         chosen_node_ids = F.pick(chosen_neighbors,
                                  chosen_node_ids.reshape(shape=(-1, 1)),
-                                 axis=1, keepdims=True).reshape(shape=(-4, -1, beam_size))
-        # Determine loop
-        loop = F.sum(F.broadcast_equal(F.expand_dims(chosen_node_ids, axis=2), samples), axis=2)
-        chosen_node_ids = F.where(use_prev + loop,
+                                 axis=1).reshape(shape=(-4, -1, beam_size))
+        #loop = F.sum(F.broadcast_equal(F.expand_dims(chosen_node_ids, axis=2), samples), axis=2)
+        beam_alive_mask = F.take(beam_alive_mask.reshape(shape=(-1,)),
+                                 batch_beam_indices.reshape(shape=(-1,)))\
+                              .reshape(shape=(-1, beam_size))
+        chosen_node_ids = F.where(use_prev + loop + F.logical_not(beam_alive_mask),
                                   -F.ones_like(indices),
                                   chosen_node_ids)
         new_samples = F.concat(selected_samples,
@@ -139,17 +148,14 @@ class _RouteSearchStepUpdate(HybridBlock):
         # Update the states
         new_states = _choose_states(F, states, self._state_info, batch_beam_indices.reshape((-1,)))
         # Update the alive mask.
-        beam_alive_mask = F.take(beam_alive_mask.reshape(shape=(-1,)),
-                                 batch_beam_indices.reshape(shape=(-1,)))\
-                              .reshape(shape=(-1, beam_size)) \
-                          * (chosen_node_ids != destinations.reshape((-4, -1, beam_size)))
+        beam_alive_mask = beam_alive_mask * (chosen_node_ids != destinations.reshape((-4, -1, beam_size)))
+        # Set the score to large negative value if the loop is detected.
+        new_scores = F.where(F.broadcast_logical_and(loop, beam_alive_mask),
+                             F.ones_like(new_scores) * LARGE_NEGATIVE_FLOAT,
+                             new_scores)
         beam_alive_mask = F.where(loop,
                                   F.zeros_like(beam_alive_mask),
                                   beam_alive_mask)
-        # Set the score to large negative value if the loop is detected.
-        new_scores = F.where(loop * beam_alive_mask,
-                             F.ones_like(new_scores) * LARGE_NEGATIVE_FLOAT,
-                             new_scores)
         return new_samples, new_valid_length, new_scores,\
                chosen_node_ids, beam_alive_mask, new_states
 
@@ -234,7 +240,7 @@ class RouteSearchSampler(object):
         if beam_size > 1:
             scores[:, 1:beam_size] = LARGE_NEGATIVE_FLOAT
         samples = step_input.reshape((batch_size, beam_size, 1))
-        while True:
+        for _ in range(int(np.sqrt(self._graph.size) * 3)):
             neighbors = self._graph.get_neighbors(step_input.asnumpy())
             nd_neighbors = self._pad(neighbors).as_in_context(ctx)
             log_probs, new_states = self._decoder(step_input, nd_neighbors, destinations, states)
@@ -257,4 +263,5 @@ class RouteSearchSampler(object):
             step_input = mx.nd.relu(chosen_node_ids).reshape((-1,))
             if mx.nd.sum(beam_alive_mask).asscalar() == 0:
                 return samples, scores, valid_length
+        return samples, scores, valid_length  
 

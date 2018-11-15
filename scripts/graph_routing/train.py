@@ -287,12 +287,12 @@ def evaluate(data_loader, ctx=context[0], search=False):
         if search:
             samples, _, sample_valid_length = searcher.search(src[:, 0], destinations)
             max_score_sample = samples[:, 0, :].asnumpy()
-            sample_valid_length = sample_valid_length[:, 0].asnumpy()
+            max_sample_valid_length = sample_valid_length[:, 0].asnumpy()
             src = src.astype('int32', copy=False).asnumpy()
             destinations = destinations.astype('int32', copy=False).asnumpy()
             valid_length = valid_length.astype('int32', copy=False).asnumpy()
             for i in range(max_score_sample.shape[0]):
-                sample = max_score_sample[i][:sample_valid_length[i]]
+                sample = max_score_sample[i][:max_sample_valid_length[i]]
                 gt_seq = np.concatenate((src[i][:(valid_length[i] - 1)], [destinations[i]]))
                 if sample.tolist() == gt_seq.tolist():
                     accuracy += 1
