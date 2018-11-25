@@ -53,10 +53,11 @@ from gluonnlp.data import ConstWidthBucket, LinearWidthBucket, ExpWidthBucket,\
     FixedBucketSampler, IWSLT2015, WMT2016, WMT2016BPE, WMT2014, WMT2014BPE
 from gluonnlp.model import BeamSearchScorer
 from translation import NMTModel, MixBeamSearchTranslator
-from parallel_transformer import get_parallel_transformer_encoder_decoder
+from parallel_transformer import get_parallel_transformer_encoder_decoder, ParallelTransformer
 from loss import MixSoftmaxCEMaskedLoss, LabelSmoothing
 from utils import logging_config
 from bleu import _bpe_to_words, compute_bleu
+from parallel import Parallel
 import _constants as _C
 
 np.random.seed(100)
@@ -300,11 +301,11 @@ data_test_lengths = get_data_lengths(data_test)
 
 with io.open(os.path.join(args.save_dir, 'val_gt.txt'), 'w', encoding='utf-8') as of:
     for ele in val_tgt_sentences:
-        of.write(' '.join(ele) + '\n')
+        of.write(ele + '\n')
 
 with io.open(os.path.join(args.save_dir, 'test_gt.txt'), 'w', encoding='utf-8') as of:
     for ele in test_tgt_sentences:
-        of.write(' '.join(ele) + '\n')
+        of.write(ele + '\n')
 
 data_train = data_train.transform(lambda src, tgt: (src, tgt, len(src), len(tgt)), lazy=False)
 data_val = SimpleDataset([(ele[0], ele[1], len(ele[0]), len(ele[1]), i)
@@ -362,6 +363,7 @@ test_loss_function = MixSoftmaxCEMaskedLoss(num_mix=args.num_states // 2)
 test_loss_function.hybridize(static_alloc=static_alloc)
 
 detokenizer = NLTKMosesDetokenizer()
+parallel_model = ParallelTransformer(model, label_smoothing, loss_function)
 
 
 def evaluate(data_loader, context=ctx[0]):
@@ -501,6 +503,8 @@ def train():
     average_start = (len(train_data_loader) // grad_interval) * (args.epochs - args.average_start)
     average_param_dict = None
     model.collect_params().zero_grad()
+    initialized = False
+    parallel = Parallel(len(ctx), parallel_model)
     #model.load_parameters(os.path.join(args.save_dir, 'average.params'), ctx)
     #if args.average_checkpoint:
     #    for j in range(args.num_averages):
@@ -540,27 +544,26 @@ def train():
                 trainer.set_learning_rate(new_lr)
             src_wc, tgt_wc, bs = np.sum([(shard[2].sum(), shard[3].sum(), shard[0].shape[0])
                                          for shard in seqs], axis=0)
-            src_wc = src_wc.asscalar()
-            tgt_wc = tgt_wc.asscalar()
-            loss_denom += tgt_wc - bs
             seqs = [[seq.as_in_context(context) for seq in shard]
                     for context, shard in zip(ctx, seqs)]
             Ls = []
-            with mx.autograd.record():
-                for src_seq, tgt_seq, src_valid_length, tgt_valid_length in seqs:
-                    out, additional_out = model(src_seq, tgt_seq[:, :-1],
-                                   src_valid_length, tgt_valid_length - 1)
-                    smoothed_label = label_smoothing(tgt_seq[:, 1:])
-                    ls = loss_function(out, additional_out[1][0], smoothed_label, tgt_valid_length - 1).sum()
-                    Ls.append((ls * (tgt_seq.shape[1] - 1)) / args.batch_size / 1000.0)
-            for L in Ls:
-                L.backward()
+            if initialized:
+                for seq in seqs:
+                    parallel.put((seq, args.batch_size))
+                Ls = [parallel.get() for _ in range(len(ctx))]
+            else:
+                for seq in seqs:
+                    Ls.append(parallel_model.forward_backward((seq, args.batch_size)))
+                initialized = True
+            src_wc = src_wc.asscalar()
+            tgt_wc = tgt_wc.asscalar()
+            loss_denom += tgt_wc - bs
             if batch_id % grad_interval == grad_interval - 1 or\
                     batch_id == len(train_data_loader) - 1:
                 if average_param_dict is None:
                     average_param_dict = {k: v.data(ctx[0]).copy() for k, v in
                                           model.collect_params().items()}
-                trainer.step(float(loss_denom) / args.batch_size / 1000.0)
+                trainer.step(float(loss_denom) / args.batch_size / 100.0)
                 param_dict = model.collect_params()
                 param_dict.zero_grad()
                 if step_num > average_start:
@@ -570,7 +573,7 @@ def train():
             step_loss += sum([L.asscalar() for L in Ls])
             if batch_id % grad_interval == grad_interval - 1 or\
                     batch_id == len(train_data_loader) - 1:
-                log_avg_loss += step_loss / loss_denom * args.batch_size * 1000.0
+                log_avg_loss += step_loss / loss_denom * args.batch_size * 100.0
                 loss_denom = 0
                 step_loss = 0
             log_wc += src_wc + tgt_wc

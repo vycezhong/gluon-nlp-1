@@ -120,10 +120,10 @@ class NMTModel(Block):
                     'inner_units and in_units cannot be None when tie_weights is True'
                 self.tgt_proj = FactorizedDense(out_units=len(tgt_vocab), inner_units=inner_units,
                                                 in_units=in_units, flatten=False,
-                                                params=self.tgt_embed.params, prefix='tgt_proj_')
+                                                params=self.tgt_embed[0].params, prefix='tgt_proj_')
             else:
                 self.tgt_proj = nn.Dense(units=len(tgt_vocab), flatten=False,
-                                         params=self.tgt_embed.params, prefix='tgt_proj_')
+                                         params=self.tgt_embed[0].params, prefix='tgt_proj_')
         else:
             if tgt_proj is None:
                 with self.name_scope():
@@ -392,7 +392,7 @@ class FactorizedDense(HybridBlock):
             self._out_units = out_units
             self._in_units = in_units
             self.factor = self.params.get('factor', shape=(inner_units, in_units),
-                                          init=mx.init.Orthogonal(rand_type="normal"), dtype=dtype,
+                                          init=weight_initializer, dtype=dtype,
                                           allow_deferred_init=True)
             self.weight = self.params.get('weight', shape=(out_units, inner_units),
                                           init=weight_initializer, dtype=dtype,

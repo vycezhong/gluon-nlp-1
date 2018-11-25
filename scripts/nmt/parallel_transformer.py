@@ -23,6 +23,7 @@ import math
 import mxnet as mx
 from mxnet.gluon import nn, rnn
 from mxnet.gluon.block import HybridBlock
+from parallel import Parallelizable
 try:
     from encoder_decoder import Seq2SeqEncoder, Seq2SeqDecoder, _get_attention_cell, \
         _get_cell_type, _nested_sequence_last, _expand_size, _reshape_size
@@ -652,3 +653,29 @@ def get_parallel_transformer_encoder_decoder(num_layers=2, num_bottom_layers=4, 
                                          bias_initializer=bias_initializer,
                                          prefix=prefix + 'dec_', params=params)
     return encoder, decoder
+
+
+class ParallelTransformer(Parallelizable):
+    """ Data parallel transformer. """
+    def __init__(self, model, label_smoothing, loss_function):
+        self._model = model
+        self._label_smoothing = label_smoothing
+        self._loss = loss_function
+
+    def forward(self, src_seq, tgt_seq, src_valid_length, tgt_valid_length, batch_size):
+        with mx.autograd.record():
+            out, additional_out = self._model(src_seq, tgt_seq[:, :-1],
+                                 src_valid_length, tgt_valid_length - 1)
+            smoothed_label = self._label_smoothing(tgt_seq[:, 1:])
+            ls = self._loss(out, additional_out[1][0], smoothed_label, tgt_valid_length - 1).sum()
+            ls = (ls * (tgt_seq.shape[1] - 1)) / batch_size / 100.0
+        return ls
+
+    def backward(self, loss):
+        loss.backward()
+
+    def forward_backward(self, x):
+        sequence, batch_size = x
+        ls = self.forward(*sequence, batch_size)
+        self.backward(ls)
+        return ls
