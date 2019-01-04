@@ -40,6 +40,7 @@ import random
 import os
 import logging
 import math
+import pickle
 import numpy as np
 import mxnet as mx
 from mxnet import gluon
@@ -298,12 +299,16 @@ def train():
     average_param_dict = None
     model.collect_params().zero_grad()
     parallel = Parallel(num_ctxs, parallel_model)
+    train_seqs = []
+    valid_seqs = []
+    test_seqs = []
     for epoch_id in range(args.epochs):
         log_avg_loss = 0
         log_wc = 0
         loss_denom = 0
         step_loss = 0
         log_start_time = time.time()
+        moving_loss = 0
         for batch_id, seqs \
                 in enumerate(train_data_loader):
             if batch_id % grad_interval == 0:
@@ -315,7 +320,6 @@ def train():
                                          for shard in seqs], axis=0)
             seqs = [[seq.as_in_context(context) for seq in shard]
                     for context, shard in zip(ctx, seqs)]
-            Ls = []
             for seq in seqs:
                 parallel.put((seq, args.batch_size))
             Ls = [parallel.get() for _ in range(len(ctx))]
@@ -339,6 +343,7 @@ def train():
                     batch_id == len(train_data_loader) - 1:
                 log_avg_loss += step_loss / loss_denom * args.batch_size * 100.0
                 loss_denom = 0
+                moving_loss = 0.999 * moving_loss + 0.001 * (step_loss / loss_denom * args.batch_size * 100.0)
                 step_loss = 0
             log_wc += src_wc + tgt_wc
             if (batch_id + 1) % (args.log_interval * grad_interval) == 0:
@@ -353,11 +358,13 @@ def train():
                 log_avg_loss = 0
                 log_wc = 0
         mx.nd.waitall()
+        train_seqs.append([moving_loss])
         valid_loss, valid_translation_out = evaluate(val_data_loader, ctx[0])
         valid_bleu_score, _, _, _, _ = compute_bleu([val_tgt_sentences], valid_translation_out,
                                                     tokenized=tokenized, tokenizer=args.bleu,
                                                     split_compound_word=split_compound_word,
                                                     bpe=bpe)
+        valid_seqs.append([valid_loss, valid_bleu_score])
         logging.info('[Epoch {}] valid Loss={:.4f}, valid ppl={:.4f}, valid bleu={:.2f}'
                      .format(epoch_id, valid_loss, np.exp(valid_loss), valid_bleu_score * 100))
         test_loss, test_translation_out = evaluate(test_data_loader, ctx[0])
@@ -365,6 +372,7 @@ def train():
                                                    tokenized=tokenized, tokenizer=args.bleu,
                                                    split_compound_word=split_compound_word,
                                                    bpe=bpe)
+        test_seqs.append([test_loss, test_bleu_score])
         logging.info('[Epoch {}] test Loss={:.4f}, test ppl={:.4f}, test bleu={:.2f}'
                      .format(epoch_id, test_loss, np.exp(test_loss), test_bleu_score * 100))
         dataprocessor.write_sentences(valid_translation_out,
@@ -416,6 +424,13 @@ def train():
                                   os.path.join(args.save_dir, 'best_valid_out.txt'))
     dataprocessor.write_sentences(test_translation_out,
                                   os.path.join(args.save_dir, 'best_test_out.txt'))
+
+    if not os.path.exists("./results"):
+        os.mkdir("./results")
+    f = open('./results/{}-lr-{}'
+             .format(args.optimizer, args.lr), 'wb')
+    pickle.dump([train_seqs, valid_seqs, test_seqs], f)
+    f.close()
 
 
 if __name__ == '__main__':
