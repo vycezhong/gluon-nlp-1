@@ -53,6 +53,7 @@ from loss import SoftmaxCEMaskedLoss, LabelSmoothing
 from utils import logging_config
 from bleu import _bpe_to_words, compute_bleu
 import dataprocessor
+from gluoncv.optimizer import *
 
 np.random.seed(100)
 random.seed(100)
@@ -261,8 +262,17 @@ def evaluate(data_loader, context=ctx[0]):
 
 def train():
     """Training function."""
+    if args.optimizer == 'adam':
+        trainer_params = {'learning_rate': args.lr, 'beta2': 0.98, 'epsilon': 1e-9}
+    elif args.optimizer == 'adabcm':
+        trainer_params = {'learning_rate': args.lr, 'alpha': 0.98, 'epsilon': 1e-9,
+                          'block_schedule': 'whole'}
+    elif args.optimizer == 'adabce':
+        trainer_params = {'learning_rate': args.lr, 'alpha': 0.98, 'epsilon': 1e-9,
+                          'block_schedule': 'whole'}
+
     trainer = gluon.Trainer(model.collect_params(), args.optimizer,
-                            {'learning_rate': args.lr, 'beta2': 0.98, 'epsilon': 1e-9})
+                            trainer_params)
 
     train_data_loader, val_data_loader, test_data_loader \
         = dataprocessor.make_dataloader(data_train, data_val, data_test, args,
