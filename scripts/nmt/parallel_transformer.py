@@ -295,7 +295,7 @@ class ParallelTransformerEncoder(HybridBlock, Seq2SeqEncoder):
         for i, cell in enumerate(self.transformer_cells):
             if i == self._num_bottom_layers:
                 transition_out = self.transition_cell(inputs)
-                transition_out = self.dropout_layer(transition_out)
+                #transition_out = self.dropout_layer(transition_out)
                 if self._use_residual:
                     inputs = self.residual_proj(inputs)
                     inputs = F.expand_dims(inputs, 2)
@@ -578,7 +578,7 @@ class ParallelTransformerDecoder(HybridBlock, Seq2SeqDecoder):
                 step_additional_outputs.append(mix_prob)
                 # Apply transition cell to obtain K states
                 transition_out = self.transition_cell(inputs)
-                transition_out = self.dropout_layer(transition_out)
+                #transition_out = self.dropout_layer(transition_out)
                 if self._use_residual:
                     inputs = self.residual_proj(inputs)
                     inputs = F.expand_dims(inputs, 2)
