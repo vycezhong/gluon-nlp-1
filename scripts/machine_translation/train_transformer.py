@@ -342,8 +342,8 @@ def train():
             if batch_id % grad_interval == grad_interval - 1 or\
                     batch_id == len(train_data_loader) - 1:
                 log_avg_loss += step_loss / loss_denom * args.batch_size * 100.0
-                loss_denom = 0
                 moving_loss = 0.999 * moving_loss + 0.001 * (step_loss / loss_denom * args.batch_size * 100.0)
+                loss_denom = 0
                 step_loss = 0
             log_wc += src_wc + tgt_wc
             if (batch_id + 1) % (args.log_interval * grad_interval) == 0:
