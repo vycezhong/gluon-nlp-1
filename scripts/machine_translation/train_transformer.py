@@ -41,6 +41,7 @@ import os
 import io
 import logging
 import math
+import pickle
 import numpy as np
 import mxnet as mx
 from mxnet import gluon
@@ -59,6 +60,8 @@ from utils import logging_config
 from bleu import _bpe_to_words, compute_bleu
 import _constants as _C
 from dataset import TOY
+from parallel import Parallel, ParallelTransformer
+from gluonnlp.optimizer import *
 
 np.random.seed(100)
 random.seed(100)
@@ -322,6 +325,7 @@ data_test = SimpleDataset([(ele[0], ele[1], len(ele[0]), len(ele[1]), i)
 
 ctx = [mx.cpu()] if args.gpus is None or args.gpus == '' else \
     [mx.gpu(int(x)) for x in args.gpus.split(',')]
+num_ctxs = len(ctx)
 
 if args.src_max_len <= 0 or args.tgt_max_len <= 0:
     max_len = np.max(
@@ -368,6 +372,9 @@ test_loss_function = SoftmaxCEMaskedLoss()
 test_loss_function.hybridize(static_alloc=static_alloc)
 
 detokenizer = SacreMosesDetokenizer()
+
+rescale_loss = 100
+parallel_model = ParallelTransformer(model, label_smoothing, loss_function, rescale_loss)
 
 
 def evaluate(data_loader, context=ctx[0]):
@@ -433,8 +440,19 @@ def write_sentences(sentences, file_path):
 
 def train():
     """Training function."""
+    if args.optimizer == 'adam':
+        trainer_params = {'learning_rate': args.lr, 'beta2': 0.98, 'epsilon': 1e-9}
+    elif args.optimizer == 'adabcm':
+        trainer_params = {'learning_rate': args.lr, 'alpha': 0.98, 'epsilon': 1e-9,
+                          'block_schedule': 'whole'}
+    elif args.optimizer == 'adabce':
+        trainer_params = {'learning_rate': args.lr, 'alpha': 0.98, 'epsilon': 1e-9,
+                          'block_schedule': 'whole'}
+    idx2name = {}
+    idx2name.update(enumerate(model.collect_params().keys()))
+    trainer_params["param_idx2name"] = idx2name
     trainer = gluon.Trainer(model.collect_params(), args.optimizer,
-                            {'learning_rate': args.lr, 'beta2': 0.98, 'epsilon': 1e-9})
+                            trainer_params)
 
     train_batchify_fn = btf.Tuple(btf.Pad(), btf.Pad(),
                                   btf.Stack(dtype='float32'), btf.Stack(dtype='float32'))
@@ -509,12 +527,17 @@ def train():
     average_start = (len(train_data_loader) // grad_interval) * (args.epochs - args.average_start)
     average_param_dict = None
     model.collect_params().zero_grad()
+    parallel = Parallel(num_ctxs, parallel_model)
+    train_seqs = []
+    valid_seqs = []
+    test_seqs = []
     for epoch_id in range(args.epochs):
         log_avg_loss = 0
         log_wc = 0
         loss_denom = 0
         step_loss = 0
         log_start_time = time.time()
+        moving_loss = 0
         for batch_id, seqs \
                 in enumerate(train_data_loader):
             if batch_id % grad_interval == 0:
@@ -524,21 +547,17 @@ def train():
                 trainer.set_learning_rate(new_lr)
             src_wc, tgt_wc, bs = np.sum([(shard[2].sum(), shard[3].sum(), shard[0].shape[0])
                                          for shard in seqs], axis=0)
+            seqs = [[seq.as_in_context(context) for seq in shard]
+                    for context, shard in zip(ctx, seqs)]
+
+            Ls = []
+            for seq in seqs:
+                parallel.put((seq, args.batch_size))
+            Ls = [parallel.get() for _ in range(len(ctx))]
             src_wc = src_wc.asscalar()
             tgt_wc = tgt_wc.asscalar()
             loss_denom += tgt_wc - bs
-            seqs = [[seq.as_in_context(context) for seq in shard]
-                    for context, shard in zip(ctx, seqs)]
-            Ls = []
-            with mx.autograd.record():
-                for src_seq, tgt_seq, src_valid_length, tgt_valid_length in seqs:
-                    out, _ = model(src_seq, tgt_seq[:, :-1],
-                                   src_valid_length, tgt_valid_length - 1)
-                    smoothed_label = label_smoothing(tgt_seq[:, 1:])
-                    ls = loss_function(out, smoothed_label, tgt_valid_length - 1).sum()
-                    Ls.append((ls * (tgt_seq.shape[1] - 1)) / args.batch_size / 100.0)
-            for L in Ls:
-                L.backward()
+
             if batch_id % grad_interval == grad_interval - 1 or\
                     batch_id == len(train_data_loader) - 1:
                 if average_param_dict is None:
@@ -555,6 +574,8 @@ def train():
             if batch_id % grad_interval == grad_interval - 1 or\
                     batch_id == len(train_data_loader) - 1:
                 log_avg_loss += step_loss / loss_denom * args.batch_size * 100.0
+                moving_loss = 0.999 * moving_loss \
+                              + 0.001 * (step_loss / loss_denom * args.batch_size * 100.0)
                 loss_denom = 0
                 step_loss = 0
             log_wc += src_wc + tgt_wc
@@ -570,11 +591,13 @@ def train():
                 log_avg_loss = 0
                 log_wc = 0
         mx.nd.waitall()
+        train_seqs.append([moving_loss])
         valid_loss, valid_translation_out = evaluate(val_data_loader, ctx[0])
         valid_bleu_score, _, _, _, _ = compute_bleu([val_tgt_sentences], valid_translation_out,
                                                     tokenized=tokenized, tokenizer=args.bleu,
                                                     split_compound_word=split_compound_word,
                                                     bpe=bpe)
+        valid_seqs.append([valid_loss, valid_bleu_score])
         logging.info('[Epoch {}] valid Loss={:.4f}, valid ppl={:.4f}, valid bleu={:.2f}'
                      .format(epoch_id, valid_loss, np.exp(valid_loss), valid_bleu_score * 100))
         test_loss, test_translation_out = evaluate(test_data_loader, ctx[0])
@@ -582,6 +605,7 @@ def train():
                                                    tokenized=tokenized, tokenizer=args.bleu,
                                                    split_compound_word=split_compound_word,
                                                    bpe=bpe)
+        test_seqs.append([test_loss, test_bleu_score])
         logging.info('[Epoch {}] test Loss={:.4f}, test ppl={:.4f}, test bleu={:.2f}'
                      .format(epoch_id, test_loss, np.exp(test_loss), test_bleu_score * 100))
         write_sentences(valid_translation_out,
@@ -631,7 +655,12 @@ def train():
                     os.path.join(args.save_dir, 'best_valid_out.txt'))
     write_sentences(test_translation_out,
                     os.path.join(args.save_dir, 'best_test_out.txt'))
-
+    if not os.path.exists("./results"):
+        os.mkdir("./results")
+    f = open('./results/{}-lr-{}'
+             .format(args.optimizer, args.lr), 'wb')
+    pickle.dump([train_seqs, valid_seqs, test_seqs], f)
+    f.close()
 
 if __name__ == '__main__':
     train()
