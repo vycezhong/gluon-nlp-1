@@ -270,7 +270,7 @@ def train():
                           'block_schedule': 'whole'}
     elif args.optimizer == 'adabce':
         trainer_params = {'learning_rate': args.lr, 'alpha': 0.98, 'epsilon': 1e-9,
-                          'block_schedule': 'whole'}
+                          'block_schedule': 'output'}
 
     trainer = gluon.Trainer(model.collect_params(), args.optimizer,
                             trainer_params)
