@@ -660,7 +660,7 @@ class TransformerEncoder(BaseTransformerEncoder):
                                                  # extra configurations for transformer
                                                  positional_weight='sinusoidal',
                                                  use_bert_encoder=False,
-                                                 use_layer_norm_before_dropout=True,
+                                                 use_layer_norm_before_dropout=False,
                                                  scale_embed=True)
 
 ###############################################################################
