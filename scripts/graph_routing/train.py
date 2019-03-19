@@ -61,7 +61,7 @@ parser.add_argument('--nheads', type=int, default=4,
 parser.add_argument('--epochs', type=int, default=50,
                     help='upper epoch limit')
 parser.add_argument('--batch_size', type=int, default=1000, metavar='N',
-                    help='Batch size. Number of nodes per gpu in a minibatch')
+                    help='Batch size. Number of trajectory nodes per gpu in a minibatch')
 parser.add_argument('--test_batch_size', type=int, default=5000, metavar='N',
                     help='Test batch size. Number of samples per gpu in a minibatch')
 parser.add_argument('--num_buckets', type=int, default=10, help='Bucket number')
