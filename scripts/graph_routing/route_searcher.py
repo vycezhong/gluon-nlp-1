@@ -36,7 +36,7 @@ class RouteSearcher(object):
         self._sampler = RouteSearchSampler(
             decoder=self._decode_logprob,
             graph=graph)
-        self._embedding = None
+        self._embeddings = None
 
     def _decode_logprob(self, step_input, neighbors, destinations, states):
         out, states, _ = self._model.encode_step(step_input, neighbors, destinations, self._embeddings, states)
@@ -64,7 +64,7 @@ class RouteSearcher(object):
 
     @property
     def embeddings(self):
-        return self._embedding
+        return self._embeddings
 
     @embeddings.setter
     def embeddings(self, embeddings):

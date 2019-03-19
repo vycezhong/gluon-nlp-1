@@ -23,17 +23,26 @@ __all__ = ['GCNLayer', 'GCN']
 
 
 class GCNLayer(HybridBlock):
-    def __init__(self, embed_size, **kwargs):
+    def __init__(self, embed_size, use_residual=False, activation='relu', **kwargs):
         super(GCNLayer, self).__init__(**kwargs)
+        self.use_residual = use_residual
+        self.activation = activation
         with self.name_scope():
             self.dense1 = nn.Dense(embed_size, use_bias=False, flatten=False)
             self.dense2 = nn.Dense(embed_size, use_bias=False, flatten=False)
 
     def hybrid_forward(self, F, x, adjacency_matrix):
+        if self.use_residual:
+            residual = x
         x1 = self.dense1(x)
         x2 = self.dense2(x)
         x2 = F.sparse.dot(adjacency_matrix, x2)
-        return F.Activation(x1 + x2, act_type='relu', name='activation')
+        if self.use_residual:
+            return F.Activation(x1 + x2 + residual, act_type='relu', name='activation')
+        if self.activation:
+            return F.Activation(x1 + x2, act_type='relu', name=self.activation)
+        else:
+            return x1 + x2
 
 
 class GCN(HybridBlock):
@@ -43,8 +52,11 @@ class GCN(HybridBlock):
         self.embed_size = embed_size
         with self.name_scope():
             self.layers = nn.HybridSequential('GCN')
-            for _ in range(num_layers):
-                self.layers.add(GCNLayer(embed_size))
+            for i in range(num_layers):
+                if i != num_layers - 1:
+                    self.layers.add(GCNLayer(embed_size))
+                else:
+                    self.layers.add(GCNLayer(embed_size, activation=None))
 
     def hybrid_forward(self, F, x, adjacency_matrix):
         x0 = F.full((self.graph_size, self.embed_size), val=1./self.embed_size)

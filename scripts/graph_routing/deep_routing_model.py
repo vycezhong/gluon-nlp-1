@@ -30,14 +30,18 @@ __all__ = ['DeepRoutingNetwork']
 class DeepRoutingNetwork(Block):
     def __init__(self, enc_model, graph_size, embed_size, hidden_size,
                  concat, num_gcn_layers, num_encoder_layers,
-                 max_length, num_heads=8, dropout=0.0,
+                 max_length, num_heads=8, dropout=0.0, use_baseline=False,
                  prefix='deep_routing_model_', params=None):
         super(DeepRoutingNetwork, self).__init__(prefix=prefix, params=params)
         self.graph_size = graph_size
         self.embed_size = embed_size
         self.concat = concat
+        self.use_baseline = use_baseline
         with self.name_scope():
-            self.gcn = GCN(graph_size, embed_size, num_gcn_layers)
+            if not use_baseline:
+                self.gcn = GCN(graph_size, embed_size, num_gcn_layers)
+            else:
+                self.embeddings = nn.Embedding(input_dim=graph_size, output_dim=embed_size)
             if enc_model == 'transformer':
                 if concat:
                     enc_embed_size = embed_size * 2
@@ -58,9 +62,14 @@ class DeepRoutingNetwork(Block):
             self.proj = MLP()
 
     def lookup_embeddings(self, seq, neighbors, destinations, embeddings):
-        seq_embeddings = mx.nd.Embedding(seq, embeddings, self.graph_size, self.embed_size)
-        neighbor_embeddings = mx.nd.Embedding(neighbors, embeddings, self.graph_size, self.embed_size)
-        destination_embeddings = mx.nd.Embedding(destinations, embeddings, self.graph_size, self.embed_size)
+        if not self.use_baseline:
+            seq_embeddings = mx.nd.Embedding(seq, embeddings, self.graph_size, self.embed_size)
+            neighbor_embeddings = mx.nd.Embedding(neighbors, embeddings, self.graph_size, self.embed_size)
+            destination_embeddings = mx.nd.Embedding(destinations, embeddings, self.graph_size, self.embed_size)
+        else:
+            seq_embeddings = self.embeddings(seq)
+            neighbor_embeddings = self.embeddings(neighbors)
+            destination_embeddings = self.embeddings(destinations)
         return seq_embeddings, neighbor_embeddings, destination_embeddings
 
     def compute_embeddings(self, embeddings, adjacency_matrix):
@@ -139,7 +148,7 @@ class DeepRoutingNetwork(Block):
                                 mx.nd.expand_dims(neighbors, axis=1))
         return step_output, states, step_additional_outputs
 
-    def forward(self, seq, neighbors, destinations, valid_length, embeddings):
+    def forward(self, seq, neighbors, destinations, valid_length, embeddings=None):
         outputs, _, additional_outputs = self.encode_seq(seq,
                                                          neighbors,
                                                          destinations,

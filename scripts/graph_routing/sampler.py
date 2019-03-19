@@ -24,6 +24,7 @@ __all__ = ['RouteSearchSampler']
 
 from multiprocessing.dummy import Pool as ThreadPool
 import threading
+import numpy as np
 import mxnet as mx
 import heapq
 
@@ -59,7 +60,8 @@ class RouteSearchSampler(object):
         step_input = s
         d_scalar = d.asscalar()
         ctx = s.context
-        while q:
+        while q and len(seen) <= int(np.sqrt(self._graph.size) * 3):
+        #while q:
             (cost, v1, path) = heapq.heappop(q)
             if v1 not in seen:
                 seen.add(v1)
@@ -72,6 +74,7 @@ class RouteSearchSampler(object):
                 with self._lock:
                     log_probs, states = self._decoder(step_input, nd_neighbors, d, states)
                 log_probs = log_probs.asnumpy()[0]
+                #log_probs = self._graph._weights[v1]
                 for i in range(len(neighbors)):
                     v2 = neighbors[i]
                     c = - log_probs[i]

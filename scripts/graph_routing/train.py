@@ -103,6 +103,8 @@ parser.add_argument('--optimizer', type=str, default='sgd',
                     help='optimizer to use (sgd, adam)')
 parser.add_argument('--valid_ratio', type=float, default=0.1,
                     help='Proportion [0, 1] of training samples to use for validation set.')
+parser.add_argument('--baseline', action='store_true',
+                    help='Whether to use baseline model')
 args = parser.parse_args()
 
 ###############################################################################
@@ -128,23 +130,32 @@ logging.info(args)
 
 def load_routing_data():
     print('loading data ...')
-    with open('data/data.pkl', 'rb') as f:
+    if not args.use_synthetic:
+        dataset = 'data/data_preprocessed.pkl'
+    else:
+        dataset = 'data/data.pkl'
+    with open(dataset, 'rb') as f:
         data = pickle.load(f)
     graph = Graph(data['nodes'], data['edges'], data['weights'], normalize=True)
     if not args.use_synthetic:
         trajectories = data['trajectories']
         data_train = SimpleDataset([([node[1] for node in trajectory],
                                      trajectory[-1][1]) for trajectory in trajectories])
+        print(len(trajectories))
+        data_train, data_val = nlp.data.train_valid_split(data_train, args.valid_ratio)
     else:
         with open('data/synthetic.pkl', 'rb') as f:
             trajectories = pickle.load(f)
         data_train = SimpleDataset([(trajectory, trajectory[-1])
-                                    for trajectory in trajectories[:100000]])
+                                    for trajectory in trajectories[:500000]])
+        data_val = SimpleDataset([(trajectory, trajectory[-1])
+                                  for trajectory in trajectories[-20000:]])
     print('spliting data ...')
-    data_train, data_val = nlp.data.train_valid_split(data_train, args.valid_ratio)
+    data_val, data_test = nlp.data.train_valid_split(data_val, 0.5)
+    print('finish spliting data ...')
     positions = mx.nd.array(graph.positions, ctx=context[0])
     adjacency_matrix = mx.nd.sparse.csr_matrix(graph.adjacency_matrix, dtype='float32', ctx=context[0])
-    return data_train, data_val, graph, positions, adjacency_matrix
+    return data_train, data_val, data_test, graph, positions, adjacency_matrix
 
 
 def get_data_lengths(dataset):
@@ -168,17 +179,25 @@ class DataTransform(object):
 
 # Construct the DataLoader. Pad data and stack label
 
-data_train, data_val, graph, positions, adjacency_matrix = load_routing_data()
+data_train, data_val, data_test, graph, positions, adjacency_matrix = load_routing_data()
 data_train_lengths = get_data_lengths(data_train)
 data_val_lengths = get_data_lengths(data_val)
+data_test_lengths = get_data_lengths(data_test)
+
+logging.info('average length={:f}'.format(np.mean(data_train_lengths)))
+logging.info('std={:f}'.format(np.std(data_train_lengths)))
+logging.info('max length={:f}'.format(np.max(data_train_lengths)))
 
 data_train = data_train.transform(DataTransform(), lazy=False)
 data_val = data_val.transform(DataTransform(), lazy=False)
+data_test = data_test.transform(DataTransform(), lazy=False)
 
 train_batchify_fn = btf.Tuple(btf.Pad(), btf.Pad(), btf.Pad(axis=(0, 1)),
                               btf.Stack(dtype='float32'), btf.Stack(dtype='float32'), btf.Pad())
 val_batchify_fn = btf.Tuple(btf.Pad(), btf.Pad(), btf.Pad(axis=(0, 1)),
                             btf.Stack(dtype='float32'), btf.Stack(dtype='float32'), btf.Pad())
+test_batchify_fn = btf.Tuple(btf.Pad(), btf.Pad(), btf.Pad(axis=(0, 1)),
+                             btf.Stack(dtype='float32'), btf.Stack(dtype='float32'), btf.Pad())
 
 print('Use FixedBucketSampler')
 bucket_scheme = ExpWidthBucket(bucket_len_step=1.2)
@@ -199,22 +218,34 @@ val_batch_sampler = FixedBucketSampler(lengths=data_val_lengths,
                                        bucket_scheme=bucket_scheme)
 print(val_batch_sampler.stats())
 
+test_batch_sampler = FixedBucketSampler(lengths=data_test_lengths,
+                                        batch_size=args.test_batch_size,
+                                        num_buckets=args.num_buckets,
+                                        shuffle=False,
+                                        use_average_length=True,
+                                        bucket_scheme=bucket_scheme)
+print(test_batch_sampler.stats())
+
 train_data_loader = ShardedDataLoader(data_train,
                                       batch_sampler=train_batch_sampler,
                                       batchify_fn=train_batchify_fn,
-                                      num_workers=4)
+                                      num_workers=1)
 
 val_data_loader = DataLoader(data_val,
                              batch_sampler=val_batch_sampler,
                              batchify_fn=val_batchify_fn,
                              num_workers=1)
 
+test_data_loader = DataLoader(data_test,
+                              batch_sampler=test_batch_sampler,
+                              batchify_fn=val_batchify_fn,
+                              num_workers=1)
 
 # Build the model
 
 model = DeepRoutingNetwork(args.enc_model, graph.size, args.emsize, args.nhid,
                            args.concat, args.gcn_nlayers, args.enc_nlayers,
-                           graph.size, args.nheads, args.dropout)
+                           graph.size, args.nheads, args.dropout, args.baseline)
 model.initialize(init=mx.init.Xavier(magnitude=args.magnitude), ctx=context)
 model.hybridize(static_alloc=True)
 
@@ -225,22 +256,22 @@ searcher = RouteSearcher(model, graph)
 
 print(model)
 
-if args.optimizer == 'sgd':
+if args.optimizer == 'nag':
     trainer_params = {'learning_rate': args.lr,
-                      'momentum': 0,
+                      'momentum': 0.9,
                       'wd': args.wd}
 elif args.optimizer == 'adam':
     trainer_params = {'learning_rate': args.lr,
                       'wd': args.wd,
-                      'beta1': 0,
-                      'beta2': 0.999,
-                      'epsilon': 1e-8}
+                      'beta1': 0.9,
+                      'beta2': 0.98,
+                      'epsilon': 1e-9}
 elif args.optimizer == 'ftml':
     trainer_params = {'learning_rate': args.lr,
                       'wd': args.wd,
                       'beta1': 0.6,
-                      'beta2': 0.999,
-                      'epsilon': 1e-8}
+                      'beta2': 0.99,
+                      'epsilon': 1e-9}
 
 trainer = gluon.Trainer(model.collect_params(), args.optimizer, trainer_params)
 
@@ -265,9 +296,11 @@ def evaluate(data_loader, ctx=context[0], search=False):
     """
     avg_loss_denom = 0
     avg_loss = 0.0
-    embeddings = model.compute_embeddings(positions, adjacency_matrix)
-    searcher.embeddings = embeddings
+    if not args.baseline:
+        embeddings = model.compute_embeddings(positions, adjacency_matrix)
+        searcher.embeddings = embeddings
     accuracy = 0
+    total_match_ratio = 0
     for src, tgt, neighbors, destinations, valid_length, valid_target in data_loader:
         src = src.as_in_context(ctx)
         tgt = tgt.as_in_context(ctx)
@@ -276,7 +309,10 @@ def evaluate(data_loader, ctx=context[0], search=False):
         valid_length = valid_length.as_in_context(ctx)
         valid_target = valid_target.as_in_context(ctx)
         # Calculating Loss
-        out, _ = model(src, neighbors, destinations, valid_length - 1, embeddings)
+        if not args.baseline:
+            out, _ = model(src, neighbors, destinations, valid_length - 1, embeddings)
+        else:
+            out, _ = model(src, neighbors, destinations, valid_length - 1)
         loss = loss_function(out, tgt, valid_length - 1, valid_target)
         loss = (loss * src.shape[1]) / (valid_length - 1)
         avg_loss += loss.sum().asscalar()
@@ -291,9 +327,16 @@ def evaluate(data_loader, ctx=context[0], search=False):
                 seq = seq[:(length - 1)] + [dest]
                 if sample == seq:
                     accuracy += 1
+                mismatch = 0
+                for a, b in zip(sample, seq):
+                    if a != b:
+                        mismatch += 1
+                mismatch += max(len(sample), len(seq)) - min(len(sample), len(seq))
+                total_match_ratio += 1 - mismatch / max(len(sample), len(seq)) 
     avg_loss = avg_loss / avg_loss_denom
     accuracy /= avg_loss_denom
-    return avg_loss, accuracy
+    total_match_ratio /= avg_loss_denom
+    return avg_loss, accuracy, total_match_ratio
 
 
 def train():
@@ -308,7 +351,7 @@ def train():
     average_start = (len(train_data_loader) // grad_interval) * (args.epochs - args.average_start)
     average_param_dict = None
     model.collect_params().zero_grad()
-    print('start training ...')
+    old_embeddings = None
     for epoch_id in range(args.epochs):
         log_avg_loss = 0
         log_wc = 0
@@ -330,10 +373,13 @@ def train():
                     for ctx, shard in zip(context, seqs)]
             Ls = []
             with mx.autograd.record():
-                embeddings = model.compute_embeddings(positions, adjacency_matrix)
                 for src, tgt, neighbors, destinations, valid_length, valid_target in seqs:
-                    out, _ = model(src, neighbors, destinations, valid_length - 1,
-                                   embeddings.as_in_context(src.context))
+                    if not args.baseline:
+                        embeddings = model.compute_embeddings(positions.as_in_context(src.context),
+                                                              adjacency_matrix.as_in_context(src.context))
+                        out, _ = model(src, neighbors, destinations, valid_length - 1, embeddings)
+                    else:
+                        out, _ = model(src, neighbors, destinations, valid_length - 1)
                     ls = loss_function(out, tgt, valid_length - 1, valid_target).sum()
                     Ls.append((ls * src.shape[1]) / args.batch_size / 100.0)
             for L in Ls:
@@ -372,7 +418,7 @@ def train():
                 log_avg_loss = 0
                 log_wc = 0
         mx.nd.waitall()
-        valid_loss, accuracy = evaluate(val_data_loader, context[0])
+        valid_loss, accuracy, match_ratio = evaluate(val_data_loader, context[0])
         logging.info('[Epoch {}] valid Loss={:.4f}, valid ppl={:.4f}, accuracy={:.4f}'
                      .format(epoch_id, valid_loss, np.exp(valid_loss), accuracy))
         if valid_loss < best_valid_loss:
@@ -410,8 +456,9 @@ if __name__ == '__main__':
             v.set_data(average_param_dict[k])
     else:
         model.load_parameters(os.path.join(args.save_dir, 'valid_best.params'), context)
-    final_val_L, final_accuracy = evaluate(val_data_loader, context[0], search=True)
-    logging.info('Best model valid Loss={:.4f}, valid ppl={:.4f}, accuracy={:.4f}'
-                 .format(final_val_L, np.exp(final_val_L), final_accuracy))
+    final_val_L, final_val_accuracy, val_match_ratio = evaluate(val_data_loader, context[0], search=True)
+    final_test_L, final_test_accuracy, test_match_ratio = evaluate(test_data_loader, context[0], search=True)
+    logging.info('Best model valid Loss={:.4f}, valid ppl={:.4f}, val accuracy={:.4f}, val match ratio={:.4f}, test Loss={:.4f}, test ppl={:.4f}, test accuracy={:.4f}, test match ratio={:.4f}'
+                 .format(final_val_L, np.exp(final_val_L), final_val_accuracy, val_match_ratio, final_test_L, np.exp(final_test_L), final_test_accuracy, test_match_ratio))
     logging.info('Total time cost {:.2f}h'.format((time.time()-start_pipeline_time)/3600))
 
