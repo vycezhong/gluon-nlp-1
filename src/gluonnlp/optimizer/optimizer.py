@@ -2,7 +2,7 @@ import math
 import mxnet as mx
 from mxnet.ndarray import NDArray, mean, square, sqrt, clip
 
-__all__ = ['AdaBCE', 'BAGM']
+__all__ = ['AdaBCM', 'BAGM']
 
 
 @mx.optimizer.Optimizer.register
