@@ -133,7 +133,7 @@ class AdaBCM(mx.optimizer.Optimizer):
 @mx.optimizer.Optimizer.register
 class BAGM(mx.optimizer.Optimizer):
     def __init__(self, learning_rate=0.001, beta=0.9, alpha=0.999, c=3.0, epsilon=1e-3,
-                 alpha_schedule='exp', block_schedule='B1', **kwargs):
+                 alpha_schedule='exp', block_schedule='B1', num_heads=8, **kwargs):
         super(BAGM, self).__init__(learning_rate=learning_rate, **kwargs)
         self.beta = beta
         self.alpha = alpha
@@ -141,6 +141,7 @@ class BAGM(mx.optimizer.Optimizer):
         self.c = c
         self.epsilon = epsilon
         self.block_schedule = block_schedule
+        self.num_heads = num_heads
 
     def create_state(self, index, weight):
         name = self.idx2name[index]
@@ -149,9 +150,7 @@ class BAGM(mx.optimizer.Optimizer):
                 if self.block_schedule == 'B2' or \
                                 self.block_schedule == 'B3':
                     shape = weight.shape
-                elif self.block_schedule == 'B5':
-                    shape = weight.shape
-                elif self.block_schedule == 'B1':
+                elif self.block_schedule == 'B1' or self.block_schedule == 'B4':
                     shape = (1,)
             elif len(weight.shape) == 2:
                 if self.block_schedule == 'B2' or \
@@ -159,8 +158,6 @@ class BAGM(mx.optimizer.Optimizer):
                     shape = (weight.shape[0], 1)
                 elif self.block_schedule == 'B4':
                     shape = (1, weight.shape[1])
-                elif self.block_schedule == 'B5':
-                    shape = weight.shape
                 elif self.block_schedule == 'B1':
                     shape = (1, 1)
             elif len(weight.shape) == 4:
@@ -177,20 +174,16 @@ class BAGM(mx.optimizer.Optimizer):
                 if self.block_schedule == 'B2' or \
                                 self.block_schedule == 'B3':
                     shape = weight.shape
-                elif self.block_schedule == 'B5':
-                    shape = weight.shape
                 elif self.block_schedule == 'B1':
-                    shape = (8, 1)
+                    shape = (self.num_heads, 1)
             elif len(weight.shape) == 2:
                 if self.block_schedule == 'B2' or \
                                 self.block_schedule == 'B3':
                     shape = (weight.shape[0], 1)
                 elif self.block_schedule == 'B4':
-                    shape = (8, 1, weight.shape[1])
-                elif self.block_schedule == 'B5':
-                    shape = weight.shape
+                    shape = (self.num_heads, 1, weight.shape[1])
                 elif self.block_schedule == 'B1':
-                    shape = (8, 1)
+                    shape = (self.num_heads, 1)
         return (mx.nd.zeros(weight.shape, weight.context, dtype=weight.dtype),  # mean
                 mx.nd.zeros(shape, weight.context, dtype=weight.dtype))  # variance
 
@@ -232,9 +225,6 @@ class BAGM(mx.optimizer.Optimizer):
             elif self.block_schedule == 'B4':
                 axes = 0
                 exclude = False
-            elif self.block_schedule == 'B5':
-                axes = tuple(range(l))
-                exclude = True
             elif self.block_schedule == 'B1':
                 axes = ()
                 exclude = True
@@ -249,18 +239,15 @@ class BAGM(mx.optimizer.Optimizer):
                 delta = lr * m_t / (sqrt(u_t) + self.epsilon)
             elif self.block_schedule == 'B4':
                 if l == 2:
-                    shape = (8, -1)
+                    shape = (self.num_heads, -1)
                 elif l == 3:
-                    shape = (-4, 8, -1, 0)
+                    shape = (-4, self.num_heads, -1, 0)
                 u_t[:] = alpha * u_t + (1. - alpha) * mean(square(grad).reshape(shape), 1,
                                                            keepdims=True)
                 delta = lr * m_t.reshape(shape) / (sqrt(u_t) + self.epsilon)
                 delta = delta.reshape(grad.shape)
-            elif self.block_schedule == 'B5':
-                u_t[:] = alpha * u_t + (1. - alpha) * square(grad)
-                delta = lr * m_t / (sqrt(u_t) + self.epsilon)
             elif self.block_schedule == 'B1':
-                shape = (8, -1)
+                shape = (self.num_heads, -1)
                 u_t[:] = alpha * u_t + (1. - alpha) * mean(square(grad).reshape(shape), 0,
                                                            exclude=True, keepdims=True)
                 delta = lr * m_t.reshape(shape) / (sqrt(u_t) + self.epsilon)
