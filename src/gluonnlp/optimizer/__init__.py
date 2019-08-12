@@ -21,5 +21,6 @@
 """NLP optimizer."""
 
 from .bert_adam import *
+from .optimizer import *
 
-__all__ = bert_adam.__all__
+__all__ = bert_adam.__all__ + optimizer.__all__
