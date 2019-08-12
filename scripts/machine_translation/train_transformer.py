@@ -261,15 +261,16 @@ def evaluate(data_loader, context=ctx[0]):
 
 def train():
     """Training function."""
-    update_on_kvstore = False
+    update_on_kvstore = True
     param_idx2name = {}
     if update_on_kvstore:
-        idx2name.update(enumerate(model.collect_params().keys()))
+        param_idx2name.update(enumerate(model.collect_params().keys()))
     else:
         for k in range(len(ctx)):
             param_idx2name.update({i * len(ctx) + k: n for i, n in enumerate(model.collect_params().keys())})
     trainer = gluon.Trainer(model.collect_params(), args.optimizer,
-                            {'learning_rate': args.lr, 'beta': 0.98, 'epsilon': 1e-9, 'param_idx2name': param_idx2name},
+                            {'learning_rate': args.lr, 'beta': 0.9, 'alpha': 0.98, 
+                             'epsilon': 1e-9, 'block_schedule': 'B2', 'num_heads': args.num_heads, 'param_idx2name': param_idx2name},
                             update_on_kvstore=update_on_kvstore)
 
     train_data_loader, val_data_loader, test_data_loader \
