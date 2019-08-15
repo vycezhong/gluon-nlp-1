@@ -40,9 +40,7 @@ github_doc_root = 'http://gluon-nlp.mxnet.io/{}/'.format(str(version))
 
 # add markdown parser
 CommonMarkParser.github_doc_root = github_doc_root
-source_parsers = {
-    '.md': CommonMarkParser
-}
+extensions = ['recommonmark']
 
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom ones
@@ -53,22 +51,13 @@ extensions = [
     'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
     'sphinx.ext.napoleon',
+    'sphinx_autodoc_typehints',
     'sphinx.ext.mathjax',
     'sphinx_gallery.gen_gallery',
     'nbsphinx',
     'IPython.sphinxext.ipython_console_highlighting',
     'IPython.sphinxext.ipython_directive',
-    'sphinx_autorun',
 ]
-
-doctest_global_setup = '''
-import gluonnlp
-import mxnet as mx
-from mxnet import gluon
-import numpy as np
-import doctest
-doctest.ELLIPSIS_MARKER = '-etc-'
-'''
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -93,7 +82,7 @@ nbsphinx_prolog = """
 
 .. only:: html
 
-    :download:`[Download] <{{ "../%s.zip"|format(paths[1]) }}>`
+    :download:`Download this tutorial <{{ "../%s.zip"|format(paths[1]) }}>`
 """
 
 # The suffix(es) of source filenames.
@@ -134,7 +123,8 @@ html_favicon = '_static/gluon.ico'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
-exclude_patterns = ['_build', '**.ipynb_checkpoints', 'examples/*/*/**.rst', 'model_zoo/*/*/**.rst']
+exclude_patterns = ['_build', '**.ipynb_checkpoints', 'examples/*/*/**.rst', 'model_zoo/*/*/**.rst',
+                    'model_zoo/word_embeddings/tools/extern/*/**.md']
 
 # The reST default role (used for this markup: `text`) to use for all
 # documents.
@@ -264,6 +254,7 @@ sphinx_gallery_conf = {
 
 # Napoleon settings
 napoleon_use_ivar = True
+napoleon_use_param = True  # Required for compatibility with sphinx-autodoc-typehints
 
 # linkcheck settings
 import multiprocessing

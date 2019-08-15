@@ -52,10 +52,13 @@ def _position_encoding_init(max_length, dim):
     position_enc[:, 1::2] = np.cos(position_enc[:, 1::2])  # dim 2i+1
     return position_enc
 
-def _get_layer_norm(use_bert, units):
+def _get_layer_norm(use_bert, units, layer_norm_eps=None):
     from .bert import BERTLayerNorm
     layer_norm = BERTLayerNorm if use_bert else nn.LayerNorm
-    return layer_norm(in_channels=units)
+    if layer_norm_eps:
+        return layer_norm(in_channels=units, epsilon=layer_norm_eps)
+    else:
+        return layer_norm(in_channels=units)
 
 class BasePositionwiseFFN(HybridBlock):
     """Base Structure of the Positionwise Feed-Forward Neural Network.
@@ -78,12 +81,18 @@ class BasePositionwiseFFN(HybridBlock):
     use_bert_layer_norm : bool, default False.
         Whether to use the BERT-stype layer norm implemented in Tensorflow, where
         epsilon is added inside the square root. Set to True for pre-trained BERT model.
+    ffn1_dropout : bool, default False
+        If True, apply dropout both after the first and second Positionwise
+        Feed-Forward Neural Network layers. If False, only apply dropout after
+        the second.
     prefix : str, default None
         Prefix for name of `Block`s
         (and name of weight if params is `None`).
     params : Parameter or None
         Container for weight sharing between cells.
         Created if `None`.
+    layer_norm_eps : float, default None
+        Epsilon for layer_norm
 
     Inputs:
         - **inputs** : input sequence of shape (batch_size, length, C_in).
@@ -91,14 +100,17 @@ class BasePositionwiseFFN(HybridBlock):
     Outputs:
         - **outputs** : output encoding of shape (batch_size, length, C_out).
     """
+
     def __init__(self, units=512, hidden_size=2048, dropout=0.0, use_residual=True,
                  weight_initializer=None, bias_initializer='zeros', activation='relu',
-                 use_bert_layer_norm=False, prefix=None, params=None):
+                 use_bert_layer_norm=False, ffn1_dropout=False, prefix=None, params=None,
+                 layer_norm_eps=None):
         super(BasePositionwiseFFN, self).__init__(prefix=prefix, params=params)
         self._hidden_size = hidden_size
         self._units = units
         self._use_residual = use_residual
         self._dropout = dropout
+        self._ffn1_dropout = ffn1_dropout
         with self.name_scope():
             self.ffn_1 = nn.Dense(units=hidden_size, flatten=False,
                                   weight_initializer=weight_initializer,
@@ -111,7 +123,8 @@ class BasePositionwiseFFN(HybridBlock):
                                   prefix='ffn_2_')
             if dropout:
                 self.dropout_layer = nn.Dropout(rate=dropout)
-            self.layer_norm = _get_layer_norm(use_bert_layer_norm, units)
+            self.layer_norm = _get_layer_norm(use_bert_layer_norm, units,
+                                              layer_norm_eps=layer_norm_eps)
 
     def _get_activation(self, act):
         """Get activation block based on the name. """
@@ -140,6 +153,8 @@ class BasePositionwiseFFN(HybridBlock):
         outputs = self.ffn_1(inputs)
         if self.activation:
             outputs = self.activation(outputs)
+        if self._dropout and self._ffn1_dropout:
+            outputs = self.dropout_layer(outputs)
         outputs = self.ffn_2(outputs)
         if self._dropout:
             outputs = self.dropout_layer(outputs)
@@ -192,13 +207,18 @@ class BaseTransformerEncoderCell(HybridBlock):
     params : Parameter or None
         Container for weight sharing between cells.
         Created if `None`.
+    activation : str, default None
+        Activation methods in PositionwiseFFN
+    layer_norm_eps : float, default None
+        Epsilon for layer_norm
     """
     def __init__(self, attention_cell='multi_head', units=128,
                  hidden_size=512, num_heads=4, scaled=True,
                  dropout=0.0, use_residual=True, output_attention=False,
                  weight_initializer=None, bias_initializer='zeros',
                  attention_use_bias=False, attention_proj_use_bias=False,
-                 use_bert_layer_norm=False, use_bert_ffn=False, prefix=None, params=None):
+                 use_bert_layer_norm=False, use_bert_ffn=False, prefix=None, params=None,
+                 activation='relu', layer_norm_eps=None):
         super(BaseTransformerEncoderCell, self).__init__(prefix=prefix, params=params)
         self._units = units
         self._num_heads = num_heads
@@ -221,17 +241,20 @@ class BaseTransformerEncoderCell(HybridBlock):
                                  prefix='proj_')
             self.ffn = self._get_positionwise_ffn(use_bert_ffn, units, hidden_size, dropout,
                                                   use_residual, weight_initializer,
-                                                  bias_initializer)
-            self.layer_norm = _get_layer_norm(use_bert_layer_norm, units)
+                                                  bias_initializer, activation=activation,
+                                                  layer_norm_eps=layer_norm_eps)
+            self.layer_norm = _get_layer_norm(use_bert_layer_norm, units,
+                                              layer_norm_eps=layer_norm_eps)
 
     def _get_positionwise_ffn(self, use_bert, units, hidden_size, dropout, use_residual,
-                              weight_initializer, bias_initializer):
+                              weight_initializer, bias_initializer, activation='relu',
+                              layer_norm_eps=None):
         from .bert import BERTPositionwiseFFN
         positionwise_ffn = BERTPositionwiseFFN if use_bert else PositionwiseFFN
         return positionwise_ffn(units=units, hidden_size=hidden_size, dropout=dropout,
                                 use_residual=use_residual, weight_initializer=weight_initializer,
-                                bias_initializer=bias_initializer)
-
+                                bias_initializer=bias_initializer, activation=activation,
+                                layer_norm_eps=layer_norm_eps)
 
     def hybrid_forward(self, F, inputs, mask=None):  # pylint: disable=arguments-differ
         # pylint: disable=unused-argument
@@ -316,6 +339,10 @@ class BaseTransformerEncoder(HybridBlock, Seq2SeqEncoder):
     params : Parameter or None
         Container for weight sharing between cells.
         Created if `None`.
+    activation : str, default 'relu'
+        Activation methods in PositionwiseFFN
+    layer_norm_eps : float, default None
+        Epsilon for layer_norm
     """
     def __init__(self, attention_cell='multi_head', num_layers=2,
                  units=512, hidden_size=2048, max_length=50,
@@ -324,7 +351,7 @@ class BaseTransformerEncoder(HybridBlock, Seq2SeqEncoder):
                  weight_initializer=None, bias_initializer='zeros',
                  positional_weight='sinusoidal', use_bert_encoder=False,
                  use_layer_norm_before_dropout=False, scale_embed=True,
-                 prefix=None, params=None):
+                 prefix=None, params=None, activation='relu', layer_norm_eps=None):
         super(BaseTransformerEncoder, self).__init__(prefix=prefix, params=params)
         assert units % num_heads == 0,\
             'In TransformerEncoder, The units should be divided exactly ' \
@@ -345,14 +372,16 @@ class BaseTransformerEncoder(HybridBlock, Seq2SeqEncoder):
         with self.name_scope():
             if dropout:
                 self.dropout_layer = nn.Dropout(rate=dropout)
-            self.layer_norm = _get_layer_norm(use_bert_encoder, units)
+            self.layer_norm = _get_layer_norm(use_bert_encoder, units,
+                                              layer_norm_eps=layer_norm_eps)
             self.position_weight = self._get_positional(positional_weight, max_length, units,
                                                         weight_initializer)
             self.transformer_cells = nn.HybridSequential()
             for i in range(num_layers):
                 cell = self._get_encoder_cell(use_bert_encoder, units, hidden_size, num_heads,
                                               attention_cell, weight_initializer, bias_initializer,
-                                              dropout, use_residual, scaled, output_attention, i)
+                                              dropout, use_residual, scaled, output_attention, i,
+                                              activation=activation, layer_norm_eps=layer_norm_eps)
                 self.transformer_cells.add(cell)
 
     def _get_positional(self, weight_type, max_length, units, initializer):
@@ -368,7 +397,7 @@ class BaseTransformerEncoder(HybridBlock, Seq2SeqEncoder):
 
     def _get_encoder_cell(self, use_bert, units, hidden_size, num_heads, attention_cell,
                           weight_initializer, bias_initializer, dropout, use_residual,
-                          scaled, output_attention, i):
+                          scaled, output_attention, i, activation='relu', layer_norm_eps=None):
         from .bert import BERTEncoderCell
         cell = BERTEncoderCell if use_bert else TransformerEncoderCell
         return cell(units=units, hidden_size=hidden_size,
@@ -377,7 +406,9 @@ class BaseTransformerEncoder(HybridBlock, Seq2SeqEncoder):
                     bias_initializer=bias_initializer,
                     dropout=dropout, use_residual=use_residual,
                     scaled=scaled, output_attention=output_attention,
-                    prefix='transformer%d_'%i)
+                    prefix='transformer%d_'%i,
+                    activation=activation,
+                    layer_norm_eps=layer_norm_eps)
 
 
     def __call__(self, inputs, states=None, valid_length=None): #pylint: disable=arguments-differ
@@ -537,6 +568,10 @@ class PositionwiseFFN(BasePositionwiseFFN):
         Dropout probability for the output
     use_residual : bool
         Add residual connection between the input and the output
+    ffn1_dropout : bool, default False
+        If True, apply dropout both after the first and second Positionwise
+        Feed-Forward Neural Network layers. If False, only apply dropout after
+        the second.
     weight_initializer : str or Initializer
         Initializer for the input weights matrix, used for the linear
         transformation of the inputs.
@@ -546,6 +581,10 @@ class PositionwiseFFN(BasePositionwiseFFN):
         Prefix for name of `Block`s (and name of weight if params is `None`).
     params : Parameter or None
         Container for weight sharing between cells. Created if `None`.
+    activation : str, default 'relu'
+        Activation methods in PositionwiseFFN
+    layer_norm_eps : float, default None
+        Epsilon for layer_norm
 
     Inputs:
         - **inputs** : input sequence of shape (batch_size, length, C_in).
@@ -553,16 +592,25 @@ class PositionwiseFFN(BasePositionwiseFFN):
     Outputs:
         - **outputs** : output encoding of shape (batch_size, length, C_out).
     """
+
     def __init__(self, units=512, hidden_size=2048, dropout=0.0, use_residual=True,
-                 weight_initializer=None, bias_initializer='zeros',
-                 prefix=None, params=None):
-        super(PositionwiseFFN, self).__init__(units=units, hidden_size=hidden_size,
-                                              dropout=dropout, use_residual=use_residual,
-                                              weight_initializer=weight_initializer,
-                                              bias_initializer=bias_initializer,
-                                              prefix=prefix, params=params,
-                                              # extra configurations for transformer
-                                              activation='relu', use_bert_layer_norm=False)
+                 ffn1_dropout=False, weight_initializer=None, bias_initializer='zeros', prefix=None,
+                 params=None, activation='relu', layer_norm_eps=None):
+        super(PositionwiseFFN, self).__init__(
+            units=units,
+            hidden_size=hidden_size,
+            dropout=dropout,
+            use_residual=use_residual,
+            weight_initializer=weight_initializer,
+            bias_initializer=bias_initializer,
+            prefix=prefix,
+            params=params,
+            # extra configurations for transformer
+            activation=activation,
+            use_bert_layer_norm=False,
+            layer_norm_eps=layer_norm_eps,
+            ffn1_dropout=ffn1_dropout)
+
 
 class TransformerEncoderCell(BaseTransformerEncoderCell):
     """Structure of the Transformer Encoder Cell.
@@ -594,6 +642,10 @@ class TransformerEncoderCell(BaseTransformerEncoderCell):
         Prefix for name of `Block`s. (and name of weight if params is `None`).
     params : Parameter or None
         Container for weight sharing between cells. Created if `None`.
+    activation : str, default None
+        Activation methods in PositionwiseFFN
+    layer_norm_eps : float, default None
+        Epsilon for layer_norm
 
     Inputs:
         - **inputs** : input sequence. Shape (batch_size, length, C_in)
@@ -608,7 +660,7 @@ class TransformerEncoderCell(BaseTransformerEncoderCell):
                  hidden_size=512, num_heads=4, scaled=True,
                  dropout=0.0, use_residual=True, output_attention=False,
                  weight_initializer=None, bias_initializer='zeros',
-                 prefix=None, params=None):
+                 prefix=None, params=None, activation='relu', layer_norm_eps=None):
         super(TransformerEncoderCell, self).__init__(attention_cell=attention_cell,
                                                      units=units, hidden_size=hidden_size,
                                                      num_heads=num_heads, scaled=scaled,
@@ -621,7 +673,9 @@ class TransformerEncoderCell(BaseTransformerEncoderCell):
                                                      attention_use_bias=False,
                                                      attention_proj_use_bias=False,
                                                      use_bert_layer_norm=False,
-                                                     use_bert_ffn=False)
+                                                     use_bert_ffn=False,
+                                                     activation=activation,
+                                                     layer_norm_eps=layer_norm_eps)
 
 class TransformerEncoder(BaseTransformerEncoder):
     """Structure of the Transformer Encoder.
@@ -723,7 +777,7 @@ class TransformerDecoderCell(HybridBlock):
         transformation of the inputs.
     bias_initializer : str or Initializer
         Initializer for the bias vector.
-    prefix : str, default 'rnn_'
+    prefix : str, default None
         Prefix for name of `Block`s
         (and name of weight if params is `None`).
     params : Parameter or None

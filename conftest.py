@@ -31,6 +31,7 @@ import random
 
 import numpy as np
 import mxnet as mx
+import gluonnlp
 import pytest
 
 
@@ -149,7 +150,7 @@ def function_scope_seed(request):
 
     """
 
-    seed = request.node.get_marker('seed')
+    seed = request.node.get_closest_marker('seed')
     env_seed_str = os.getenv('MXNET_TEST_SEED')
 
     if seed is not None:
@@ -176,7 +177,12 @@ def function_scope_seed(request):
 
     yield  # run the test
 
-    if request.node.rep_call.outcome == 'failed':
+    if request.node.rep_setup.failed:
+        logging.info("Setting up a test failed: {}", request.node.nodeid)
+    elif request.node.rep_call.outcome == 'failed':
+        # Either request.node.rep_setup.failed or request.node.rep_setup.passed
+        # should be True
+        assert request.node.rep_setup.passed
         # On failure also log seed on INFO log level
         logging.info(seed_message)
 
@@ -187,3 +193,12 @@ def function_scope_seed(request):
 @pytest.fixture(params=[True, False])
 def hybridize(request):
     return request.param
+
+@pytest.fixture(autouse=True)
+def doctest(doctest_namespace):
+    doctest_namespace['np'] = np
+    doctest_namespace['gluonnlp'] = gluonnlp
+    doctest_namespace['mx'] = mx
+    doctest_namespace['gluon'] = mx.gluon
+    import doctest
+    doctest.ELLIPSIS_MARKER = '-etc-'

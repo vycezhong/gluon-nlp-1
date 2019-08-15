@@ -39,7 +39,7 @@ class RNNCellLayer(Block):
     def __init__(self, rnn_cell, layout='TNC', **kwargs):
         super(RNNCellLayer, self).__init__(**kwargs)
         self.cell = rnn_cell
-        assert layout == 'TNC' or layout == 'NTC', \
+        assert layout in ('TNC', 'NTC'), \
             'Invalid layout %s; must be one of ["TNC" or "NTC"]'%layout
         self._layout = layout
         self._axis = layout.find('T')
@@ -94,6 +94,7 @@ class L2Normalization(HybridBlock):
 
 class GELU(HybridBlock):
     r"""Gaussian Error Linear Unit.
+
     This is a smoother version of the RELU.
     https://arxiv.org/abs/1606.08415
 
@@ -108,12 +109,12 @@ class GELU(HybridBlock):
         super(GELU, self).__init__(**kwargs)
         self._support_erf = False
         try:
-            self._support_erf = True if ndarray.erf else False
+            self._support_erf = bool(ndarray.erf)
         except AttributeError:
             warnings.warn('`erf` operator support is not found. '
                           'Please consider upgrading to mxnet >= 1.4')
 
-    def hybrid_forward(self, F, x):
+    def hybrid_forward(self, F, x): # pylint: disable=arguments-differ
         if self._support_erf:
             return x * 0.5 * (1.0 + F.erf(x / math.sqrt(2.0)))
         else:

@@ -1,7 +1,27 @@
+# coding: utf-8
+
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
 """BERT embedding."""
+
 import argparse
 import io
 import logging
+import os
 
 import numpy as np
 import mxnet as mx
@@ -10,11 +30,12 @@ from mxnet.gluon.data import DataLoader
 
 import gluonnlp
 from gluonnlp.data import BERTTokenizer, BERTSentenceTransform
+from gluonnlp.base import get_home_dir
 
 try:
-    from dataset import BertEmbeddingDataset
+    from data.embedding import BertEmbeddingDataset
 except ImportError:
-    from .dataset import BertEmbeddingDataset
+    from .data.embedding import BertEmbeddingDataset
 
 try:
     unicode
@@ -34,7 +55,7 @@ __all__ = ['BertEmbedding']
 logger = logging.getLogger(__name__)
 
 
-class BertEmbedding(object):
+class BertEmbedding:
     """
     Encoding from BERT model.
 
@@ -54,31 +75,13 @@ class BertEmbedding(object):
         max length of each sequence
     batch_size : int, default 256
         batch size
+    root : str, default '$MXNET_HOME/models' with MXNET_HOME defaults to '~/.mxnet'
+        Location for keeping the model parameters.
     """
-
     def __init__(self, ctx=mx.cpu(), dtype='float32', model='bert_12_768_12',
                  dataset_name='book_corpus_wiki_en_uncased', params_path=None,
-                 max_seq_length=25, batch_size=256):
-        """
-        Encoding from BERT model.
-
-        Parameters
-        ----------
-        ctx : Context.
-            running BertEmbedding on which gpu device id.
-        dtype: str
-            data type to use for the model.
-        model : str, default bert_12_768_12.
-            pre-trained BERT model
-        dataset_name : str, default book_corpus_wiki_en_uncased.
-            pre-trained model dataset
-        params_path: str, default None
-            path to a parameters file to load instead of the pretrained model.
-        max_seq_length : int, default 25
-            max length of each sequence
-        batch_size : int, default 256
-            batch size
-        """
+                 max_seq_length=25, batch_size=256,
+                 root=os.path.join(get_home_dir(), 'models')):
         self.ctx = ctx
         self.dtype = dtype
         self.max_seq_length = max_seq_length
@@ -92,7 +95,8 @@ class BertEmbedding(object):
                                                          ctx=self.ctx,
                                                          use_pooler=False,
                                                          use_decoder=False,
-                                                         use_classifier=False)
+                                                         use_classifier=False,
+                                                         root=root)
         self.bert.cast(self.dtype)
 
         if params_path:

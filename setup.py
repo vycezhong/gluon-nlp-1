@@ -61,13 +61,18 @@ setup(
             'numba>=0.40.1',
             'jieba',
             'sentencepiece',
+            'boto3',
         ],
         'dev': [
             'pytest',
+            'pylint',
+            'pylint_quotes',
+            'flake8',
             'recommonmark',
             'sphinx-gallery',
             'sphinx_rtd_theme',
             'nbsphinx',
+            'flaky',
         ],
     },
 )

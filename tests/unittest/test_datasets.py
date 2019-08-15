@@ -120,12 +120,18 @@ def test_sst_1():
         root=os.path.join('tests', 'data', 'sst-1'), segment='train')
     test = nlp.data.SST_1(
         root=os.path.join('tests', 'data', 'sst-1'), segment='test')
-    assert len(train) == 237107, len(train)
-    assert len(test) == 2125, len(test)
+    dev = nlp.data.SST_1(
+        root=os.path.join('tests', 'data', 'sst-1'), segment='dev')
+    assert len(train) == 156817, len(train)
+    assert len(test) == 2210, len(test)
+    assert len(dev) == 1101, len(dev)
     for i, (data, label) in enumerate(train):
         assert isinstance(data, _str_types)
         assert label <= 4
     for i, (data, label) in enumerate(test):
+        assert isinstance(data, _str_types)
+        assert label <= 4
+    for i, (data, label) in enumerate(dev):
         assert isinstance(data, _str_types)
         assert label <= 4
 
@@ -136,12 +142,18 @@ def test_sst_2():
         root=os.path.join('tests', 'data', 'sst-2'), segment='train')
     test = nlp.data.SST_2(
         root=os.path.join('tests', 'data', 'sst-2'), segment='test')
-    assert len(train) == 118038, len(train)
-    assert len(test) == 1745, len(test)
+    dev = nlp.data.SST_2(
+        root=os.path.join('tests', 'data', 'sst-2'), segment='dev')
+    assert len(train) == 76961, len(train)
+    assert len(test) == 1821, len(test)
+    assert len(dev) == 872, len(dev)
     for i, (data, label) in enumerate(train):
         assert isinstance(data, _str_types)
         assert label <= 1
     for i, (data, label) in enumerate(test):
+        assert isinstance(data, _str_types)
+        assert label <= 1
+    for i, (data, label) in enumerate(dev):
         assert isinstance(data, _str_types)
         assert label <= 1
 
@@ -162,7 +174,7 @@ def test_trec():
         root=os.path.join('tests', 'data', 'trec'), segment='train')
     test = nlp.data.TREC(
         root=os.path.join('tests', 'data', 'trec'), segment='test')
-    assert len(train) == 11452, len(train)
+    assert len(train) == 5452, len(train)
     assert len(test) == 500, len(test)
     for i, (data, label) in enumerate(train):
         assert isinstance(data, _str_types)
@@ -170,6 +182,26 @@ def test_trec():
     for i, (data, label) in enumerate(test):
         assert isinstance(data, _str_types)
         assert label <= 5
+
+@pytest.mark.serial
+@pytest.mark.remote_required
+def test_cr():
+    all = nlp.data.CR(
+        root=os.path.join('tests', 'data', 'cr'))
+    assert len(all) == 3775, len(all)
+    for i, (data, label) in enumerate(all):
+        assert isinstance(data, _str_types)
+        assert label <= 1
+
+@pytest.mark.serial
+@pytest.mark.remote_required
+def test_mpqa():
+    all = nlp.data.MPQA(
+        root=os.path.join('tests', 'data', 'mpqa'))
+    assert len(all) == 10606, len(all)
+    for i, (data, label) in enumerate(all):
+        assert isinstance(data, _str_types)
+        assert label <= 1
 
 ###############################################################################
 # Word similarity and relatedness datasets
@@ -223,6 +255,8 @@ def test_radinsky_mturk():
 @flaky(max_runs=2, min_passes=1)
 @pytest.mark.serial
 @pytest.mark.remote_required
+@pytest.mark.skipif(datetime.date.today() < datetime.date(2019, 7, 25),
+                    reason="verb143 temporarily unavailable.")
 def test_verb143():
     data = nlp.data.BakerVerb143(
         root=os.path.join('tests', 'externaldata', 'verb143'))
@@ -239,8 +273,6 @@ def test_verb130():
     _assert_similarity_dataset(data)
 
 
-@pytest.mark.skipif(datetime.date.today() < datetime.date(2018, 9, 10),
-                    reason='Disabled for 1 weeks due to server downtime.')
 @flaky(max_runs=2, min_passes=1)
 @pytest.mark.serial
 @pytest.mark.remote_required
@@ -274,8 +306,6 @@ def test_simverb3500():
 @flaky(max_runs=2, min_passes=1)
 @pytest.mark.serial
 @pytest.mark.remote_required
-@pytest.mark.skipif(datetime.date.today() < datetime.date(2018, 12, 10),
-                    reason='Disabled for 1 weeks due to server downtime.')
 def test_semeval17task2():
     for segment, length in [("trial", 18), ("test", 500)]:
         data = nlp.data.SemEval17Task2(
@@ -391,8 +421,6 @@ def test_conll2002_esp(segment, length):
         assert all(isinstance(n, _str_types) for n in ner), ner
 
 
-@pytest.mark.skipif(datetime.date.today() < datetime.date(2018, 8, 16),
-                    reason='Disabled for 1 weeks due to server downtime.')
 @flaky(max_runs=2, min_passes=1)
 @pytest.mark.parametrize('segment,length', [
     ('train', 8936),
@@ -576,6 +604,30 @@ def test_load_dev_squad():
     for record in val_dataset:
         assert len(record) == 7
 
+###############################################################################
+# Intent Classification and Slot Labeling
+###############################################################################
+@pytest.mark.remote_required
+@pytest.mark.parametrize('dataset,segment,expected_samples', [
+    ('atis', 'train', 4478),
+    ('atis', 'dev', 500),
+    ('atis', 'test', 893),
+    ('snips', 'train', 13084),
+    ('snips', 'dev', 700),
+    ('snips', 'test', 700)])
+def test_intent_slot(dataset, segment, expected_samples):
+    assert dataset in ['atis', 'snips']
+    if dataset == 'atis':
+        data_cls = nlp.data.ATISDataset
+    else:
+        data_cls = nlp.data.SNIPSDataset
+
+    dataset = data_cls(segment=segment, root='tests/data/{}/{}'.format(dataset, segment))
+
+    assert len(dataset) == expected_samples
+    assert len(dataset[0]) == 3
+    assert all(len(x[0]) == len(x[1]) for x in dataset)
+
 def test_counter():
     x = nlp.data.Counter({'a': 10, 'b': 1, 'c': 1})
     y = x.discard(3, '<unk>')
@@ -655,3 +707,51 @@ def test_numpy_dataset():
     assert np.all(dataset[1][1] == b[1])
     dataset_b = dataset.get_field('b')
     assert np.all(dataset_b == b)
+
+@pytest.mark.parametrize('cls,name,segment,length,fields', [
+    (nlp.data.GlueCoLA, 'cola', 'train', 8551, 2),
+    (nlp.data.GlueCoLA, 'cola', 'dev', 1043, 2),
+    (nlp.data.GlueCoLA, 'cola', 'test', 1063, 1),
+    # source: https://arxiv.org/pdf/1804.07461.pdf
+    (nlp.data.GlueSST2, 'sst', 'train', 67349, 2),
+    (nlp.data.GlueSST2, 'sst', 'dev', 872, 2),
+    (nlp.data.GlueSST2, 'sst', 'test', 1821, 1),
+    # source: http://ixa2.si.ehu.es/stswiki/index.php/STSbenchmark
+    (nlp.data.GlueSTSB, 'sts', 'train', 5749, 3),
+    (nlp.data.GlueSTSB, 'sts', 'dev', 1500, 3),
+    (nlp.data.GlueSTSB, 'sts', 'test', 1379, 2),
+    # source: https://data.quora.com/First-Quora-Dataset-Release-Question-Pairs
+    (nlp.data.GlueQQP, 'qqp', 'train', 363849, 3),
+    (nlp.data.GlueQQP, 'qqp', 'dev', 40430, 3),
+    (nlp.data.GlueQQP, 'qqp', 'test', 390965, 2),
+    # source: http://www.nyu.edu/projects/bowman/multinli/paper.pdf
+    (nlp.data.GlueMNLI, 'mnli', 'train', 392702, 3),
+    (nlp.data.GlueMNLI, 'mnli', 'dev_matched', 9815, 3),
+    (nlp.data.GlueMNLI, 'mnli', 'dev_mismatched', 9832, 3),
+    (nlp.data.GlueMNLI, 'mnli', 'test_matched', 9796, 2),
+    (nlp.data.GlueMNLI, 'mnli', 'test_mismatched', 9847, 2),
+    # source: https://arxiv.org/pdf/1804.07461.pdf
+    (nlp.data.GlueRTE, 'rte', 'train', 2490, 3),
+    (nlp.data.GlueRTE, 'rte', 'dev', 277, 3),
+    (nlp.data.GlueRTE, 'rte', 'test', 3000, 2),
+    # source: https://arxiv.org/pdf/1804.07461.pdf
+    (nlp.data.GlueQNLI, 'qnli', 'train', 108436, 3),
+    (nlp.data.GlueQNLI, 'qnli', 'dev', 5732, 3),
+    (nlp.data.GlueQNLI, 'qnli', 'test', 5740, 2),
+    # source: https://arxiv.org/pdf/1804.07461.pdf
+    (nlp.data.GlueWNLI, 'wnli', 'train', 635, 3),
+    (nlp.data.GlueWNLI, 'wnli', 'dev', 71, 3),
+    (nlp.data.GlueWNLI, 'wnli', 'test', 146, 2),
+    (nlp.data.GlueMRPC, 'mrpc', 'train', 3668, 3),
+    (nlp.data.GlueMRPC, 'mrpc', 'dev', 408, 3),
+    (nlp.data.GlueMRPC, 'mrpc', 'test', 1725, 2),
+])
+@pytest.mark.serial
+@pytest.mark.remote_required
+def test_glue_data(cls, name, segment, length, fields):
+    dataset = cls(segment=segment, root=os.path.join(
+        'tests', 'externaldata', 'glue', name))
+    assert len(dataset) == length, len(dataset)
+
+    for i, x in enumerate(dataset):
+        assert len(x) == fields, x

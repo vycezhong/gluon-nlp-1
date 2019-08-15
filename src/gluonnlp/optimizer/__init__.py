@@ -22,5 +22,6 @@
 
 from .bert_adam import *
 from .optimizer import *
+from .lamb import *
 
-__all__ = bert_adam.__all__ + optimizer.__all__
+__all__ = bert_adam.__all__ + optimizer.__all__ + lamb.__all__
