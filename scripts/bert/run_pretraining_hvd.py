@@ -144,6 +144,12 @@ def train(data_train, data_eval, model, nsp_loss, mlm_loss, vocab_size, ctx):
     params = [p for p in model.collect_params().values() if p.grad_req != 'null']
     param_dict = model.collect_params()
 
+    ########################################################################################
+    grad_dict = {k: v.grad(ctx[0]) for k, v in model.collect_params().items() if v.grad_req != 'null'}
+    mom_dict = {k: mx.nd.zeros(v.shape) for k, v in model.collect_params().items() if v.grad_req != 'null'}
+    ave_mom_dict = {k: mx.nd.zeros((1,)) for k, v in model.collect_params().items() if v.grad_req != 'null'}
+    ########################################################################################
+
     # Do not apply weight decay on LayerNorm and bias terms
     for _, v in model.collect_params('.*beta|.*gamma|.*bias').items():
         v.wd_mult = 0.0
@@ -219,6 +225,10 @@ def train(data_train, data_eval, model, nsp_loss, mlm_loss, vocab_size, ctx):
             nsp_metric.update([ns_label], [classified])
             mlm_metric.update([masked_id], [decoded], [masked_weight])
 
+            #################################################################
+            record_grad_stats(ave_mom_dict, mom_dict, grad_dict)
+            #################################################################
+
             # logging
             if (step_num + 1) % (args.log_interval) == 0 and (batch_num + 1) % accumulate == 0:
                 log(begin_time, running_num_tks, running_mlm_loss / accumulate,
@@ -251,6 +261,10 @@ def train(data_train, data_eval, model, nsp_loss, mlm_loss, vocab_size, ctx):
     mx.nd.waitall()
     train_end_time = time.time()
     logging.info('Train cost={:.1f}s'.format(train_end_time - train_begin_time))
+
+    ##################################################################
+    mx.nd.save('bert_grad_stats', [grad_dict, mom_dict, ave_mom_dict])
+    ##################################################################
 
 if __name__ == '__main__':
     random_seed = random.randint(0, 1000)
@@ -319,3 +333,14 @@ if __name__ == '__main__':
                                              False, False, 1, vocab)
         evaluate(dataset_eval, model, nsp_loss, mlm_loss, len(vocab), [ctx],
                  args.log_interval, args.dtype)
+
+
+##################################################################
+def record_grad_stats(ave_mom_dict, mom_dict, grad_dict):
+    for k, g in grad_dict:
+        sq_g = mx.nd.square(g)
+        mom_dict[k][:] = mx.nd.maximum(mom_dict, sq_g)
+        ave_mom_dict[k][:] = mx.nd.maximum(ave_mom_dict, mx.nd.mean(sq_g))
+##################################################################
+
+
