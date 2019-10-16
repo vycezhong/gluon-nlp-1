@@ -254,7 +254,7 @@ def train(data_train, data_eval, model):
     optim_params = {'learning_rate': lr, 'epsilon': 1e-6, 'wd': 0.01}
     if args.dtype == 'float16':
         optim_params['multi_precision'] = True
-    if args.optimizer == 'lamb':
+    if 'lamb' in args.optimizer:
         optim_params['bias_correction'] = True
 
     dynamic_loss_scale = args.dtype == 'float16'
@@ -380,8 +380,8 @@ def train(data_train, data_eval, model):
                 elif backend == 'byteps':
                     bps.byteps_push_pull(local_num_masks, is_average=False,
                                          name="local_num_masks", priority=0)
-                # because byteps implicitly set scale /= num_workers
-                fp16_trainer.step(local_num_masks * num_workers, max_norm=local_num_masks,
+                # because byteps and horovod implicitly set scale /= num_workers
+                fp16_trainer.step(local_num_masks / num_workers, max_norm=local_num_masks,
                                   num_ctxs=len(ctxs) * num_workers)
                 local_num_masks, local_mlm_loss = 0, 0
             # update metrics

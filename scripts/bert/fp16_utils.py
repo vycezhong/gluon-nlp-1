@@ -21,6 +21,142 @@ import collections
 import mxnet as mx
 from mxnet import nd
 
+from mxnet.optimizer import Optimizer, register
+from mxnet.engine import bulk
+from mxnet.ndarray import zeros, ones_like, NDArray
+from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where
+
+@register
+class LAMB2(Optimizer):
+    """The LAMB optimizer proposed in
+    `Reducing BERT Pre-Training Time from 3 Days to 76 Minutes <https://arxiv.org/abs/1904.00962>`_.
+
+    If bias_correction is set to False, updates are applied by::
+
+        grad = clip(grad * rescale_grad, clip_gradient)
+        m = beta1 * m + (1 - beta1) * grad
+        v = beta2 * v + (1 - beta2) * (grad**2)
+        r1 = min(max(w.norm(), lower_bound), upper_bound)
+        g = m / (sqrt(v_hat) + epsilon) + wd * w
+        r2 = g.norm()
+        r = 1. if r1 == 0. or r2 == 0. else r1 / r2
+        lr = r * lr
+        w = w - lr * g
+
+    Otherwise, updates are applied by::
+
+        grad = clip(grad * rescale_grad, clip_gradient)
+        m = beta1 * m + (1 - beta1) * grad
+        v = beta2 * v + (1 - beta2) * (grad**2)
+        m_hat = m / (1 - power(beta1, t))
+        v_hat = m / (1 - power(beta2, t))
+        r1 = w.norm()
+        g = m_hat / (sqrt(v_hat + epsilon)) + wd * w
+        r2 = g.norm()
+        r = 1. if r1 == 0. or r2 == 0. else r1 / r2
+        lr = r * lr
+        w = w - lr * g
+
+    Parameters
+    ----------
+    beta1 : float, optional, default is 0.9
+        Exponential decay rate for the first moment estimates.
+    beta2 : float, optional, default is 0.999
+        Exponential decay rate for the second moment estimates.
+    epsilon : float, optional, default is 1e-6
+        Small value to avoid division by 0.
+    lower_bound : float, optional, default is 1e-3
+        Lower limit of norm of weight
+    upper_bound : float, optional, default is 10.0
+        Upper limit of norm of weight
+    bias_correction : bool, optional, default is False
+        Whether to use bias correction, in the latest version of the lamb,
+        the bias correction was removed and some simple changes were made.
+    """
+
+    def __init__(self, learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-6,
+                 lower_bound=1e-3, upper_bound=10.0, bias_correction=False, verbose=False, **kwargs):
+        super(LAMB2, self).__init__(learning_rate=learning_rate, **kwargs)
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.epsilon = epsilon
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+        self.bias_correction = bias_correction
+        import os
+        if os.environ.get('EPS_AFTER_SQRT', False):
+            self._eps_after_sqrt = True
+        else:
+            self._eps_after_sqrt = False
+        self._bulk = int(os.environ.get('LAMB_BULK', 0))
+        import logging
+        logging.info('self._eps_after_sqrt = ' + str(self._eps_after_sqrt) + " bulk = " + str(self._bulk))
+        self._verbose = verbose
+
+    def create_state(self, index, weight):
+        stype = weight.stype
+        return (zeros(weight.shape, weight.context, dtype=weight.dtype,
+                      stype=stype),  # mean
+                zeros(weight.shape, weight.context, dtype=weight.dtype,
+                      stype=stype))  # variance
+
+    def update(self, index, weight, grad, state):
+        if self._verbose:
+            import logging
+            logging.info('rescale gradient factor = {}'.format(str(self.rescale_grad)))
+        assert(isinstance(weight, NDArray))
+        assert(isinstance(grad, NDArray))
+        self._update_count(index)
+        lr = self._get_lr(index)
+        wd = self._get_wd(index)
+        t = self._index_update_count[index]
+
+        with bulk(self._bulk):
+            # preprocess grad
+            grad *= self.rescale_grad
+            if self.clip_gradient is not None:
+                grad = clip(grad, -self.clip_gradient, self.clip_gradient)
+
+            mean, var = state
+            mean *= self.beta1
+            mean += (1. - self.beta1) * grad
+            var *= self.beta2
+            var += (1. - self.beta2) * square(grad)
+
+            r1 = weight.norm()
+            if not self.bias_correction:
+                r1 = minimum(maximum(r1, self.lower_bound), self.upper_bound)
+                sqrt_var = sqrt(var)
+                sqrt_var += self.epsilon
+                g = mean / sqrt_var
+                g += wd * weight
+            else:
+                # apply bias correction
+                mean_hat = mean / (1. - power(self.beta1, t))
+                var_hat = var / (1. - power(self.beta2, t))
+                if self._eps_after_sqrt:
+                    sqrt(var_hat, out=var_hat)
+                    var_hat += self.epsilon
+                else:
+                    var_hat += self.epsilon
+                    sqrt(var_hat, out=var_hat)
+                mean_hat /= var_hat
+                mean_hat += wd * weight
+                g = mean_hat
+
+            r2 = g.norm()
+
+            # calculate lamb_trust_ratio
+            ratio = r1 / r2
+            # becomes NaN if ratio == NaN or 0, otherwise 0
+            nan_or_zero = 1 - ratio / ratio
+            r = where(nan_or_zero, ones_like(ratio), ratio)
+            lr *= r
+
+            # update weight
+            g *= lr
+            weight[:] -= g
+
 def grad_global_norm(parameters, max_norm):
     """Calculate the 2-norm of gradients of parameters, and how much they should be scaled down
     such that their 2-norm does not exceed `max_norm`.
@@ -102,6 +238,8 @@ def grad_global_norm(parameters, max_norm):
     scale_or_one = nd.maximum(nd.ones((1,), dtype=dtype, ctx=ctx), scale)
     choices = nd.concat(scale, scale_or_one, dim=0)
     chosen_scale = choices.take(is_finite)
+    #import logging
+    #logging.info("total norm = {}, max_norm = {}, scale = {} ".format(total_norm.asscalar(), max_norm.asscalar(), chosen_scale.asscalar()))
     return total_norm, chosen_scale, is_finite
 
 
@@ -142,8 +280,9 @@ class FP16Trainer:
                 ls = loss * self._scaler.loss_scale
         if verbose:
             import logging
-            import byteps.mxnet as bps
-            logging.info('{} loss scale = {}'.format(bps.rank(), self._scaler.loss_scale))
+            #import byteps.mxnet as bps
+            #logging.info('{} loss scale = {}'.format(bps.rank(), self._scaler.loss_scale))
+            logging.info('loss scale = {}'.format(self._scaler.loss_scale))
         mx.autograd.backward(ls)
 
     def step(self, batch_size, max_norm=None, num_ctxs=None, verbose=False):
