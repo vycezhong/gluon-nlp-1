@@ -86,12 +86,13 @@ from .utils import *
 from .bilm_encoder import BiLMEncoder
 from .lstmpcellwithclip import LSTMPCellWithClip
 from .elmo import *
+from .titan import *
 
 __all__ = language_model.__all__ + sequence_sampler.__all__ + attention_cell.__all__ + \
           utils.__all__ + parameter.__all__ + block.__all__ + highway.__all__ + \
           convolutional_encoder.__all__ + sampled_block.__all__ + ['get_model'] + ['train'] + \
           bilm_encoder.__all__ + lstmpcellwithclip.__all__ + elmo.__all__ + \
-          seq2seq_encoder_decoder.__all__ + transformer.__all__ + bert.__all__
+          seq2seq_encoder_decoder.__all__ + transformer.__all__ + bert.__all__ + titan.__all__
 
 
 def get_model(name, **kwargs):
