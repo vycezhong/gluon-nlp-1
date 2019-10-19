@@ -92,6 +92,11 @@ class LAMB2(Optimizer):
         import logging
         logging.info('self._eps_after_sqrt = ' + str(self._eps_after_sqrt) + " bulk = " + str(self._bulk))
         self._verbose = verbose
+        if os.environ.get('USE_BOUND', False):
+            self._use_bound = True
+        else:
+            self._use_bound = False
+
 
     def create_state(self, index, weight):
         stype = weight.stype
@@ -132,6 +137,8 @@ class LAMB2(Optimizer):
                 g += wd * weight
             else:
                 # apply bias correction
+                if self._use_bound:
+                    r1 = minimum(maximum(r1, self.lower_bound), self.upper_bound)
                 mean_hat = mean / (1. - power(self.beta1, t))
                 var_hat = var / (1. - power(self.beta2, t))
                 if self._eps_after_sqrt:
