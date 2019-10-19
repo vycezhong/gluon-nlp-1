@@ -420,9 +420,9 @@ def train(data_train, data_eval, model):
 
             batch_num += 1
 
-    if is_master_node:
+    if is_master_node or True:
         save_states(step_num, trainer, args.ckpt_dir, local_rank)
-        if local_rank == 0:
+        if local_rank == 0 or True:
             save_parameters(step_num, model, args.ckpt_dir)
     mx.nd.waitall()
     train_end_time = time.time()
@@ -484,7 +484,13 @@ if __name__ == '__main__':
                                               args.max_predictions_per_seq)
         else:
             shuffle = True
-            data_train = get_dataset_fn(args.data, batch_size,
+            if int(os.environ.get('NO_SHARD', False)):
+                data_train = get_dataset_fn(args.data, batch_size,
+                                        len(ctxs), shuffle, args.num_buckets, vocab,
+                                        num_parts=1, part_idx=0,
+                                        num_workers=args.num_data_workers)
+            else:
+                data_train = get_dataset_fn(args.data, batch_size,
                                         len(ctxs), shuffle, args.num_buckets, vocab,
                                         num_parts=num_workers, part_idx=rank,
                                         num_workers=args.num_data_workers)
