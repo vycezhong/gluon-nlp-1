@@ -47,6 +47,11 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
 	    -x HOROVOD_CYCLE_TIME=30 \
 	    -x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=120 \
 	    -x MXNET_SAFE_ACCUMULATION=1 \
+            -x NCCL_IB_DISABLE=1 \
+            -x TRUNCATE_NORM=$TRUNCATE_NORM \
+            -x LAMB_BULK=$LAMB_BULK \
+            -x EPS_AFTER_SQRT=$EPS_AFTER_SQRT \
+            -x NO_SHARD=$NO_SHARD \
 	    --tag-output ompi_bind_DGX1.sh python3 run_pretraining.py \
 	    --data='/data/book-corpus/book-corpus-large-split/*.train,/data/enwiki/enwiki-feb-doc-split/*.train' \
 	    --data_eval='/data/book-corpus/book-corpus-large-split/*.test,/data/enwiki/enwiki-feb-doc-split/*.test' \
