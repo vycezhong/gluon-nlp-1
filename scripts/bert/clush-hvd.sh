@@ -11,7 +11,6 @@ clush -l $CLUSHUSER --hostfile $OTHER_HOST 'docker kill $(docker ps -q);'
 clush -l $CLUSHUSER --hostfile $OTHER_HOST "nvidia-smi --query-gpu=memory.used --format=csv | sed 's/\n/\t/g' | sed 's/Running/\nRunning/g' | sed 's/MiB/ /g'"
 
 #clush --hostfile $OTHER_HOST "docker ps";
-clush -l $CLUSHUSER --hostfile $OTHER_HOST "docker ps --no-trunc";
 clush -l $CLUSHUSER --hostfile $OTHER_HOST "nvidia-docker run -d --security-opt seccomp:unconfined --privileged  \
                  -v ~/ssh_info:/root/.ssh  \
                  -v /home/$CLUSHUSER/mxnet-data/bert-pretraining/datasets:/data              \

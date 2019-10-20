@@ -14,15 +14,14 @@ export MODEL=bert_24_1024_16
 export CKPTDIR=/bert/ckpts/debug
 export CKPTINTERVAL=300000000
 export OPTIMIZER=lamb2
-export COMMIT=3a752e
+export COMMIT=91ecec6
 export CLUSHUSER=ec2-user
 export NO_SHARD=1
 export HIERARCHICAL=1
 export EVALINTERVAL=1000
 
 export PORT=12451
-bash clush-hvd.sh
-
+sleep 5
 if [ "$DEBUG" = "1" ]; then
     export LOGINTERVAL=1
     export OPTIONS='--synthetic_data --verbose --local_fs'
@@ -33,20 +32,23 @@ else
     export NUMSTEPS=7813
     #export NUMSTEPS=15625
 fi
-BS=65536 ACC=4 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
+#bash clush-hvd.sh
+#BS=65536 ACC=4 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
 #BS=32768 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
 
 export PORT=12452
-bash clush-hvd.sh
-
+sleep 5
 if [ "$DEBUG" = "1" ]; then
+    export LOGINTERVAL=1
     export OPTIONS="--synthetic_data --verbose --phase2 --phase1_num_steps=$NUMSTEPS --start_step=$NUMSTEPS --local_fs"
     export NUMSTEPS=3
 else
+    export LOGINTERVAL=50
     export OPTIONS="--phase2 --phase1_num_steps=$NUMSTEPS --start_step=$NUMSTEPS --local_fs"
     export NUMSTEPS=1563
 fi
+bash clush-hvd.sh
 BS=32768 ACC=8 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
 
-
-python3 finetune_squad.py --bert_model bert_24_1024_16 --pretrained_bert_parameters $CKPTDIR/000$NUMSTEPS.params --optimizer adam --accumulate 3 --batch_size 8 --lr 3e-5 --epochs 2 --gpu 0 2>&1 | tee -a $CKPTDIR/squad.0
+STEP_FORMATTED=$(printf "%07d" $NUMSTEPS)
+python3 finetune_squad.py --bert_model bert_24_1024_16 --pretrained_bert_parameters $CKPTDIR/$STEP_FORMATTED.params --output_dir $CKPTDIR --optimizer adam --accumulate 3 --batch_size 8 --lr 3e-5 --epochs 2 --gpu 0
