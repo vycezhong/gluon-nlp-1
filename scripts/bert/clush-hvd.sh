@@ -5,7 +5,7 @@ clush -l $CLUSHUSER --hostfile $OTHER_HOST "docker pull $DOCKER_IMAGE"
 
 #clush --hostfile $OTHER_HOST "ls ~/ssh_info;"
 
-clush -l $CLUSHUSER --hostfile $OTHER_HOST "mkdir -p ~/haibin/tmp/ckpts"
+clush -l $CLUSHUSER --hostfile $OTHER_HOST "mkdir -p ~/haibin/tmp/ckpts; df -h ~/haibin/tmp/ckpts;"
 clush -l $CLUSHUSER --hostfile $OTHER_HOST "sudo rm -rf ~/ssh_info; cp -r ~/.ssh ~/ssh_info;"
 clush -l $CLUSHUSER --hostfile $OTHER_HOST 'docker kill $(docker ps -q);'
 
