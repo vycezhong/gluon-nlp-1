@@ -74,7 +74,6 @@ def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
     if not pretrained:
         import os
         if int(os.environ.get('TRUNCATE_NORM', False)):
-            import logging
             logging.info('Using truncated norm initialization')
             model.initialize(init=nlp.initializer.TruncNorm(0.02), ctx=ctx)
         else:
