@@ -82,12 +82,12 @@ def transform(instance, max_seq_length):
     return features
 
 def print_example(instance, features):
-    logging.debug('*** Example Instance ***')
-    logging.debug('\n%s', instance)
+    # logging.debug('*** Example Instance ***')
+    # logging.debug('\n%s', instance)
 
     for feature_name in features.keys():
         feature = features[feature_name]
-        logging.debug('Generated %s: %s', feature_name, feature)
+        # logging.debug('Generated %s: %s', feature_name, feature)
 
 def write_to_files_np(features, tokenizer, max_seq_length,
                       max_predictions_per_seq, output_files):
