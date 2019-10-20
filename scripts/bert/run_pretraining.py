@@ -227,7 +227,7 @@ backend = args.comm_backend
 store, num_workers, rank, local_rank, is_master_node, ctxs = init_comm(backend)
 
 
-logging.basicConfig(filename=os.path.join(args.ckpt_dir, 'log.' + str(rank)))
+logging.basicConfig(filename=os.path.join(args.ckpt_dir, ('phase1_log.' if not args.phase2 else 'phase2_log.') + str(rank)))
 logging.getLogger().setLevel(level)
 logging.info(args)
 logging.info(os.environ)
