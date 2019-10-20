@@ -2,8 +2,8 @@
 
 export HOST=hosts_8
 export OTHER_HOST=hosts_7
-export DOCKER_IMAGE=haibinlin/worker_mxnet:c5fd6fc-1.5-cu90-4590c0-4590c0
-export PORT=12448
+export DOCKER_IMAGE=haibinlin/worker_mxnet:c5fd6fc-1.5-cu90-79e6e8-79e6e8
+export PORT=12449
 export NP=64
 export NCCLMINNRINGS=1
 export TRUNCATE_NORM=1
@@ -20,8 +20,8 @@ export CLUSHUSER=ubuntu
 
 bash clush-hvd.sh
 
-export LOGINTERVAL=1
-export OPTIONS="--synthetic_data\ --eval_use_npz\ --verbose"
-NUMSTEPS=10 BS=32768 ACC=2 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
+#export LOGINTERVAL=1
+#export OPTIONS='--synthetic_data --eval_use_npz --verbose'
+#NUMSTEPS=10 BS=512 ACC=2 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
 
-#NUMSTEPS=15625 BS=32768 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
+NUMSTEPS=15625 BS=32768 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
