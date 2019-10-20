@@ -34,7 +34,7 @@ BS=65536 ACC=4 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RAT
 #NUMSTEPS=7813 BS=65536 ACC=4 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
 
 bash clush-hvd.sh
-export OPTIONS="--synthetic_data --verbose --phase2 --phase1_num_steps=$NUMSTEPS"
+export OPTIONS="--synthetic_data --verbose --phase2 --phase1_num_steps=$NUMSTEPS --start_step=$NUMSTEPS"
 
 #NUMSTEPS=1563 BS=32768 ACC=8 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
 export NUMSTEPS=10

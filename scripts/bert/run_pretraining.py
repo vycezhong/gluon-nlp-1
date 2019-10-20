@@ -512,5 +512,11 @@ if __name__ == '__main__':
                                              len(ctxs), shuffle, 1, vocab)
 
         evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, local_rank, 8)
-    while True:
-        time.sleep(100)
+    sync_point = mx.nd.ones((1), ctx=mx.gpu(local_rank))
+    if backend == 'horovod':
+        hvd.allreduce_(sync_point, average=False, name='sync_point')
+    elif backend == 'byteps':
+        bps.byteps_push_pull(sync_point, is_average=False,
+                             name="sync_point", priority=0)
+    sync_point.wait_to_read()
+    logging.info("Done")
