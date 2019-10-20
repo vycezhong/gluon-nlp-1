@@ -412,11 +412,11 @@ def train(data_train, data_eval, model):
                     save_states(step_num, trainer, args.ckpt_dir, local_rank)
                     if local_rank == 0:
                         save_parameters(step_num, model.bert, args.ckpt_dir)
-                if (step_num + 1) % args.eval_interval == 0 and data_eval:
-                    # eval data is always based on a fixed npz file.
-                    dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
-                                                         1, False, 1, vocab)
-                    evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, rank, num_workers)
+            if (step_num + 1) % args.eval_interval == 0 and data_eval and (batch_num + 1) % accumulate == 0:
+                # eval data is always based on a fixed npz file.
+                dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
+                                                     1, False, 1, vocab)
+                evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, rank, num_workers)
 
             batch_num += 1
 
