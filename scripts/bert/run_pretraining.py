@@ -472,8 +472,9 @@ if __name__ == '__main__':
         # generate dev dataset from the raw text if needed
         if not args.eval_use_npz:
             data_eval = cache_file
-            if not os.path.isfile(cache_file) and rank == 0:
-                generate_dev_set(tokenizer, vocab, cache_file, args)
+            if not os.path.isfile(cache_file) and local_rank == 0:
+                if is_master_node or args.local_fs:
+                    generate_dev_set(tokenizer, vocab, cache_file, args)
 
     logging.debug('Random seed set to %d', random_seed)
     mx.random.seed(random_seed)

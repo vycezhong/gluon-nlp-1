@@ -8,6 +8,7 @@ clush -l $CLUSHUSER --hostfile $OTHER_HOST "docker pull $DOCKER_IMAGE"
 clush -l $CLUSHUSER --hostfile $OTHER_HOST "mkdir -p ~/haibin/tmp/ckpts; df -h ~/haibin/tmp/ckpts;"
 clush -l $CLUSHUSER --hostfile $OTHER_HOST "sudo rm -rf ~/ssh_info; cp -r ~/.ssh ~/ssh_info;"
 clush -l $CLUSHUSER --hostfile $OTHER_HOST 'docker kill $(docker ps -q);'
+clush -l $CLUSHUSER --hostfile $OTHER_HOST "nvidia-smi --query-gpu=memory.used --format=csv | sed 's/\n/\t/g' | sed 's/Running/\nRunning/g' | sed 's/MiB/ /g'"
 
 #clush --hostfile $OTHER_HOST "docker ps";
 clush -l $CLUSHUSER --hostfile $OTHER_HOST "docker ps --no-trunc";
