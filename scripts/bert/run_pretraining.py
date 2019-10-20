@@ -430,7 +430,7 @@ def train(data_train, data_eval, model):
 
             batch_num += 1
 
-    if is_master_node:
+    if True:
         save_states(step_num, trainer, args.ckpt_dir, local_rank)
         if local_rank == 0:
             save_parameters(step_num, model, args.ckpt_dir)

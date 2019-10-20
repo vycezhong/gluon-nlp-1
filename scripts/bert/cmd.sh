@@ -12,10 +12,10 @@ export EPS_AFTER_SQRT=1
 export DTYPE=float16
 export MODEL=bert_24_1024_16
 export LOGINTERVAL=50
-export CKPTDIR=/bert/ckpt_stage1_64k_32k_6f0e016
+export CKPTDIR=/bert/ckpts/stage1_64k_32k_6f0e016
 export CKPTINTERVAL=300000000
 export OPTIMIZER=lamb2
-export COMMIT=9e76eec3b
+export COMMIT=79ab05
 export CLUSHUSER=ec2-user
 export NO_SHARD=1
 export HIERARCHICAL=1
@@ -24,20 +24,21 @@ export EVALINTERVAL=1000
 bash clush-hvd.sh
 
 export LOGINTERVAL=1
-#export OPTIONS='--synthetic_data --eval_use_npz --verbose'
 export OPTIONS='--synthetic_data --verbose'
-export NUMSTEPS=20
+export NUMSTEPS=7813
+export NUMSTEPS=5
 
 BS=65536 ACC=4 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
 
-#NUMSTEPS=15625 BS=32768 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
-#NUMSTEPS=7813 BS=65536 ACC=4 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
+#export NUMSTEPS=15625
+#BS=32768 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
 
 bash clush-hvd.sh
 export OPTIONS="--synthetic_data --verbose --phase2 --phase1_num_steps=$NUMSTEPS --start_step=$NUMSTEPS"
 
-#NUMSTEPS=1563 BS=32768 ACC=8 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
-export NUMSTEPS=10
+export NUMSTEPS=1563
+export NUMSTEPS=3
 BS=32768 ACC=8 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
 
-python3 finetune_squad.py --bert_model bert_24_1024_16 --pretrained_bert_parameters $CKPTDIR/0000010.params --optimizer adam --accumulate 3 --batch_size 8 --lr 3e-5 --epochs 2 --gpu 0
+python3 finetune_squad.py --bert_model bert_24_1024_16 --pretrained_bert_parameters $CKPTDIR/000$NUMSTEPS.params --optimizer adam --accumulate 3 --batch_size 8 --lr 3e-5 --epochs 2 --gpu 0 2>&1 | tee -a $CKPTDIR/squad.0
+python3 finetune_squad.py --bert_model bert_24_1024_16 --pretrained_bert_parameters $CKPTDIR/000$NUMSTEPS.params --optimizer adam --accumulate 3 --batch_size 8 --lr 3e-5 --epochs 3 --gpu 0 2>&1 | tee -a $CKPTDIR/squad.1
