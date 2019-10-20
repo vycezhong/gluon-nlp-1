@@ -43,7 +43,7 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
             --bind-to none \
 	    --mca plm_rsh_agent "ssh -q -o StrictHostKeyChecking=no -p $PORT" \
 	    -x NCCL_MIN_NRINGS=$NCCLMINNRINGS -x NCCL_DEBUG=INFO \
-	    -x HOROVOD_HIERARCHICAL_ALLREDUCE=1 \
+	    -x HOROVOD_HIERARCHICAL_ALLREDUCE=$HIERARCHICAL \
 	    -x HOROVOD_CYCLE_TIME=30 \
 	    -x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=120 \
 	    -x MXNET_SAFE_ACCUMULATION=1 \
@@ -64,5 +64,6 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
 	    --max_seq_length $MAX_SEQ_LENGTH \
 	    --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
 	    --num_data_workers 4 \
+            --eval_interval $EVALINTERVAL \
 	    --no_compute_acc --raw \
 	    --comm_backend horovod --log_interval $LOGINTERVAL $OPTIONS

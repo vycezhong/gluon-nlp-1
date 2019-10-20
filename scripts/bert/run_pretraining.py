@@ -141,16 +141,14 @@ parser.add_argument('--comm_backend', type=str, default='device',
 parser.add_argument('--gpus', type=str, default=None,
                     help='List of gpus to run when device or dist_sync_device is used for '
                          'communication, e.g. 0 or 0,2,5. empty means using cpu.')
+parser.add_argument('--phase2', action='store_true', help='phase 2 training')
+parser.add_argument('--phase1_num_steps', type=int, help='number of steps for phase 1')
 args = parser.parse_args()
 
 # logging
 nlp.utils.mkdir(args.ckpt_dir)
 level = logging.DEBUG if args.verbose else logging.INFO
-logging.basicConfig(filename=os.path.join(args.ckpt_dir, 'log'))
-logging.getLogger().setLevel(level)
-logging.info(args)
 os.environ['MXNET_GPU_MEM_POOL_TYPE'] = 'Round'
-logging.info(os.environ)
 
 class DataParallelBERT(nlp.utils.Parallelizable):
     """Data parallel BERT model.
@@ -227,6 +225,13 @@ def init_comm(backend):
 
 backend = args.comm_backend
 store, num_workers, rank, local_rank, is_master_node, ctxs = init_comm(backend)
+
+
+logging.basicConfig(filename=os.path.join(args.ckpt_dir, 'log.' + str(rank)))
+logging.getLogger().setLevel(level)
+logging.info(args)
+logging.info(os.environ)
+
 assert args.total_batch_size % (args.accumulate * num_workers) == 0
 assert args.total_batch_size_eval % (args.accumulate * num_workers) == 0
 batch_size = int(args.total_batch_size / num_workers / args.accumulate / len(ctxs))
@@ -299,6 +304,10 @@ def train(data_train, data_eval, model):
     running_num_tks = 0
     batch_num = 0
     step_num = args.start_step
+
+    # XXX checkpoint name may clash
+    if args.phase2:
+        step_num -= args.phase1_num_steps
 
     logging.debug('Training started')
     logging.info('Generating the first batch of data, which may take a few minutes ...')
@@ -416,13 +425,14 @@ def train(data_train, data_eval, model):
                 # eval data is always based on a fixed npz file.
                 dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
                                                      1, False, 1, vocab)
-                evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, rank, num_workers)
+                # TODO(haibin) replace with local-size
+                evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, local_rank, 8)
 
             batch_num += 1
 
-    if is_master_node or True:
+    if is_master_node:
         save_states(step_num, trainer, args.ckpt_dir, local_rank)
-        if local_rank == 0 or True:
+        if local_rank == 0:
             save_parameters(step_num, model, args.ckpt_dir)
     mx.nd.waitall()
     train_end_time = time.time()
@@ -503,4 +513,4 @@ if __name__ == '__main__':
 
         evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, local_rank, 8)
     while True:
-        time.sleep(999999999)
+        time.sleep(100)
