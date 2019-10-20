@@ -143,6 +143,7 @@ parser.add_argument('--gpus', type=str, default=None,
                          'communication, e.g. 0 or 0,2,5. empty means using cpu.')
 parser.add_argument('--phase2', action='store_true', help='phase 2 training')
 parser.add_argument('--phase1_num_steps', type=int, help='number of steps for phase 1')
+parser.add_argument('--local_fs', action='store_true', help='local file system for saving checkpoints')
 args = parser.parse_args()
 
 # logging
@@ -430,7 +431,7 @@ def train(data_train, data_eval, model):
 
             batch_num += 1
 
-    if True:
+    if args.local_fs or is_master_node:
         save_states(step_num, trainer, args.ckpt_dir, local_rank)
         if local_rank == 0:
             save_parameters(step_num, model, args.ckpt_dir)
