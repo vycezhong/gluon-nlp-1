@@ -257,7 +257,10 @@ def train(data_train, data_eval, model):
 
     logging.debug('Creating distributed trainer...')
     lr = args.lr
-    optim_params = {'learning_rate': lr, 'epsilon': 1e-6, 'wd': 0.01}
+    param_idx2name = {}
+    param_idx2name.update(enumerate(model.collect_params().keys()))
+    optim_params = {'learning_rate': lr, 'epsilon': 1e-6, 'wd': 0.01,
+                    'project': True, 'param_idx2name': param_idx2name}
     if args.dtype == 'float16':
         optim_params['multi_precision'] = True
     if 'lamb' in args.optimizer:

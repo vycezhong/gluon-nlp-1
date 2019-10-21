@@ -18,13 +18,55 @@
 """Trainer for mixed precision training."""
 import warnings
 import collections
+import math
 import mxnet as mx
 from mxnet import nd
 
 from mxnet.optimizer import Optimizer, register
 from mxnet.engine import bulk
 from mxnet.ndarray import zeros, ones_like, NDArray
-from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where
+from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where, norm, full
+
+
+def _projection(weight, var, alpha=0.1, iters=5, eps=1e-6):
+    var /= NDArray.mean(var)
+    scale = min(1, alpha / norm(weight))
+    if scale == 1:
+        return weight
+    alpha = square(full(shape=(1,), val=alpha, ctx=weight.context))
+    weight[:] *= sqrt(var)
+    var = 1 / var
+    z = weight * scale
+    beta = 1. / NDArray.max(var)
+    lam = beta
+    c = weight.copy()
+    for _ in range(iters):
+        Az = var * z
+        c[:] = z
+        c -= lam * Az
+        gamma = lam * norm(Az)
+        gamma += sqrt(beta) * (sqrt(alpha) - sqrt(NDArray.sum(z * Az)))
+        shift_weight = weight - c
+        y = shift_weight * min(1, gamma / norm(shift_weight))
+        y += c
+        if sqrt(NDArray.sum(y * var * y)) <= alpha:
+            v = y
+        else:
+            d = z - y
+            denom = NDArray.sum(d * var * d) + eps
+            dAz = NDArray.sum(d * Az)
+            nom = dAz + sqrt(square(dAz) - denom * (NDArray.sum(z * Az) - alpha))
+            tau = nom / denom
+            v = z + tau * (y - z)
+        d = v - weight
+        denom = NDArray.sum(d * var * d) + eps
+        Av = var * v
+        dAv = NDArray.sum(d * Av)
+        nom = dAv + sqrt(square(dAv) - denom * (NDArray.sum(v * Av) - alpha))
+        tau = nom / denom
+        z[:] = v + tau * (weight - v)
+    z[:] *= sqrt(var)
+    return z
 
 @register
 class LAMB2(Optimizer):
@@ -75,7 +117,8 @@ class LAMB2(Optimizer):
     """
 
     def __init__(self, learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-6,
-                 lower_bound=1e-3, upper_bound=10.0, bias_correction=False, verbose=False, **kwargs):
+                 lower_bound=1e-3, upper_bound=10.0, bias_correction=False,
+                 project=False, verbose=False, **kwargs):
         super(LAMB2, self).__init__(learning_rate=learning_rate, **kwargs)
         self.beta1 = beta1
         self.beta2 = beta2
@@ -96,6 +139,7 @@ class LAMB2(Optimizer):
             self._use_bound = True
         else:
             self._use_bound = False
+        self.project = project
 
 
     def create_state(self, index, weight):
@@ -115,6 +159,7 @@ class LAMB2(Optimizer):
         lr = self._get_lr(index)
         wd = self._get_wd(index)
         t = self._index_update_count[index]
+        name = self.idx2name[index]
 
         with bulk(self._bulk):
             # preprocess grad
@@ -129,27 +174,25 @@ class LAMB2(Optimizer):
             var += (1. - self.beta2) * square(grad)
 
             r1 = weight.norm()
-            if not self.bias_correction:
-                r1 = minimum(maximum(r1, self.lower_bound), self.upper_bound)
-                sqrt_var = sqrt(var)
-                sqrt_var += self.epsilon
-                g = mean / sqrt_var
-                g += wd * weight
+            # apply bias correction
+            if self._use_bound:
+                if 'weight' in name:
+                    upper_bound = 0.01 * math.sqrt(weight.size)
+                if 'classifier' in name:
+                    upper_bound = 0.04 * math.sqrt(weight.size)
+                r1 = minimum(maximum(r1, self.lower_bound), upper_bound)
+            mean_hat = mean / (1. - power(self.beta1, t))
+            var_hat = var / (1. - power(self.beta2, t))
+            if self._eps_after_sqrt:
+                sqrt(var_hat, out=var_hat)
+                var_hat += self.epsilon
             else:
-                # apply bias correction
-                if self._use_bound:
-                    r1 = minimum(maximum(r1, self.lower_bound), self.upper_bound)
-                mean_hat = mean / (1. - power(self.beta1, t))
-                var_hat = var / (1. - power(self.beta2, t))
-                if self._eps_after_sqrt:
-                    sqrt(var_hat, out=var_hat)
-                    var_hat += self.epsilon
-                else:
-                    var_hat += self.epsilon
-                    sqrt(var_hat, out=var_hat)
-                mean_hat /= var_hat
+                var_hat += self.epsilon
+                sqrt(var_hat, out=var_hat)
+            mean_hat /= var_hat
+            if not self.project:
                 mean_hat += wd * weight
-                g = mean_hat
+            g = mean_hat
 
             r2 = g.norm()
 
@@ -163,6 +206,14 @@ class LAMB2(Optimizer):
             # update weight
             g *= lr
             weight[:] -= g
+
+            if self.project:
+                if 'weight' in name:
+                    alpha = 0.01 * math.sqrt(weight.size)
+                if 'classifier' in name:
+                    alpha = 0.04 * math.sqrt(weight.size)
+                weight[:] = _projection(weight, var_hat, alpha=alpha)
+
 
 def grad_global_norm(parameters, max_norm):
     """Calculate the 2-norm of gradients of parameters, and how much they should be scaled down
