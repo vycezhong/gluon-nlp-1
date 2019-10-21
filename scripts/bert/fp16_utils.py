@@ -28,7 +28,7 @@ from mxnet.ndarray import zeros, ones_like, NDArray
 from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where, norm, full
 
 
-def _projection(weight, var, alpha=0.1, iters=5, eps=1e-6):
+def _projection(weight, var, alpha=0.1, iters=50, eps=1e-6):
     var /= NDArray.mean(var)
     scale = min(1, alpha / norm(weight))
     if scale == 1:
@@ -37,7 +37,7 @@ def _projection(weight, var, alpha=0.1, iters=5, eps=1e-6):
     weight[:] *= sqrt(var)
     var = 1 / var
     z = weight * scale
-    beta = 1. / NDArray.max(var)
+    beta = 1 / NDArray.max(var)
     lam = beta
     c = weight.copy()
     for _ in range(iters):
@@ -55,14 +55,14 @@ def _projection(weight, var, alpha=0.1, iters=5, eps=1e-6):
             d = z - y
             denom = NDArray.sum(d * var * d) + eps
             dAz = NDArray.sum(d * Az)
-            nom = dAz + sqrt(square(dAz) - denom * (NDArray.sum(z * Az) - alpha))
+            nom = dAz + sqrt(maximum(square(dAz) - denom * (NDArray.sum(z * Az) - alpha), 0))
             tau = nom / denom
             v = z + tau * (y - z)
         d = v - weight
         denom = NDArray.sum(d * var * d) + eps
         Av = var * v
         dAv = NDArray.sum(d * Av)
-        nom = dAv + sqrt(square(dAv) - denom * (NDArray.sum(v * Av) - alpha))
+        nom = dAv + sqrt(maximum(square(dAv) - denom * (NDArray.sum(v * Av) - alpha), 0))
         tau = nom / denom
         z[:] = v + tau * (weight - v)
     z[:] *= sqrt(var)
