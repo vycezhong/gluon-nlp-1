@@ -21,6 +21,7 @@ export CLUSHUSER=ec2-user
 export HIERARCHICAL=0
 export EVALINTERVAL=100000000
 export COMMIT=58435d04
+export NO_DROPOUT=1
 
 if [ "$USE_DOCKER" = "1" ]; then
     export PORT=12451
@@ -32,8 +33,10 @@ fi
 sleep 5
 if [ "$DEBUG" = "1" ]; then
     export LOGINTERVAL=1
-    export OPTIONS='--synthetic_data --verbose --local_fs'
     export NUMSTEPS=5
+    export OPTIONS='--synthetic_data --verbose --local_fs'
+    export NUMSTEPS=50000
+    export LOGINTERVAL=5
 else
     export LOGINTERVAL=50
     export OPTIONS='--local_fs'

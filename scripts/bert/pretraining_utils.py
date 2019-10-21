@@ -68,11 +68,14 @@ def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
     BERTVocab : the vocabulary.
     """
     # model
+    if int(os.environ.get('NO_DROPOUT', False)):
+        logging.info("disabling dropout")
+        nlp.model.bert.bert_24_1024_16_hparams['dropout'] = 0.0
+        nlp.model.bert.bert_24_1024_16_hparams['embed_dropout'] = 0.0
     model, vocabulary = nlp.model.get_model(model, dataset_name=dataset_name, vocab=vocab,
                                             pretrained=pretrained, ctx=ctx)
 
     if not pretrained:
-        import os
         if int(os.environ.get('TRUNCATE_NORM', False)):
             logging.info('Using truncated norm initialization')
             model.initialize(init=nlp.initializer.TruncNorm(0.02), ctx=ctx)

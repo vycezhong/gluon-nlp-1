@@ -2,6 +2,8 @@
 
 pkill python
 
+	    #-x HOROVOD_TIMELINE=timeline.efa \
+
 mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
 	    -mca pml ob1 -mca btl ^openib -mca btl_tcp_if_exclude docker0,lo \
             --bind-to none \
@@ -10,11 +12,14 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
             -x FI_PROVIDER="efa" -x FI_EFA_TX_MIN_CREDITS=64 \
             -x NCCL_IB_HCA=eth0 \
             -x NCCL_DEBUG=INFO \
-            -x HOROVOD_FUSION_THRESHOLD=268435456 \
 	    -x NCCL_MIN_NRINGS=$NCCLMINNRINGS \
+            -x HOROVOD_FUSION_THRESHOLD=268435456 \
 	    -x HOROVOD_HIERARCHICAL_ALLREDUCE=$HIERARCHICAL \
+            -x HOROVOD_NUM_NCCL_STREAMS=2 \
 	    -x HOROVOD_CYCLE_TIME=30 \
 	    -x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=120 \
+            -x NO_DROPOUT=$NO_DROPOUT \
+            -x LD_LIBRARY_PATH=$HOME/aws-ofi-nccl/install/lib/:$HOME/nccl/build/lib:/usr/local/cuda-10.0/lib64:/opt/amazon/efa/lib64:$LD_LIBRARY_PATH \
 	    -x LARGE_WINDOW=1 \
 	    -x MXNET_SAFE_ACCUMULATION=1 \
             -x NCCL_TREE_THRESHOLD=0 \
