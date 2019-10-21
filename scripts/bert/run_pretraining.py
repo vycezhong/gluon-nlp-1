@@ -265,7 +265,11 @@ def train(data_train, data_eval, model):
 
     dynamic_loss_scale = args.dtype == 'float16'
     if dynamic_loss_scale:
-        loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 1}
+        if int(os.environ.get('LARGE_WINDOW', False)):
+            logging.info("using large window size")
+            loss_scale_param = {'scale_window': 2000, 'init_scale': 1}
+        else:
+            loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 1}
     else:
         loss_scale_param = None
 
@@ -476,7 +480,7 @@ if __name__ == '__main__':
                 if is_master_node or args.local_fs:
                     generate_dev_set(tokenizer, vocab, cache_file, args)
 
-    logging.debug('Random seed set to %d', random_seed)
+    logging.info('Random seed set to %d', random_seed)
     mx.random.seed(random_seed)
 
     if args.data:
@@ -497,6 +501,7 @@ if __name__ == '__main__':
         else:
             shuffle = True
             if int(os.environ.get('NO_SHARD', False)):
+                logging.info("disabled sharding")
                 data_train = get_dataset_fn(args.data, batch_size,
                                         len(ctxs), shuffle, args.num_buckets, vocab,
                                         num_parts=1, part_idx=0,
