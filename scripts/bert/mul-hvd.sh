@@ -71,4 +71,4 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
 	    --num_data_workers 4 \
             --eval_interval $EVALINTERVAL \
 	    --no_compute_acc --raw \
-	    --comm_backend horovod --log_interval $LOGINTERVAL $OPTIONS
+	    --comm_backend horovod --log_interval $LOGINTERVAL $OPTIONS 2>&1 | tee -a mpi.log

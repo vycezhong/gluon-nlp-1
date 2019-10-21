@@ -1,4 +1,5 @@
 export DEBUG=0
+export USE_DOCKER=0
 export HOST=hosts_32
 export OTHER_HOST=hosts_31
 export DOCKER_IMAGE=haibinlin/worker_mxnet:c5fd6fc-1.5-cu90-79e6e8-79e6e8
@@ -7,18 +8,24 @@ export NCCLMINNRINGS=1
 export TRUNCATE_NORM=1
 export LAMB_BULK=30
 export EPS_AFTER_SQRT=1
+export NO_SHARD=1
 export DTYPE=float16
 export MODEL=bert_24_1024_16
 export CKPTDIR=/bert/ckpts/stage1_64k_32k_base
 export CKPTINTERVAL=300000000
 export OPTIMIZER=lamb2
 export CLUSHUSER=ec2-user
-export NO_SHARD=1
-export HIERARCHICAL=1
+export HIERARCHICAL=0
 export EVALINTERVAL=1000
 export COMMIT=58435d04
 
-export PORT=12451
+if [ "$USE_DOCKER" = "1" ]; then
+    export PORT=12451
+    bash clush-hvd.sh
+else
+    export PORT=22
+fi
+
 sleep 5
 if [ "$DEBUG" = "1" ]; then
     export LOGINTERVAL=1
@@ -30,11 +37,16 @@ else
     export NUMSTEPS=7813
     #export NUMSTEPS=15625
 fi
-bash clush-hvd.sh
-BS=65536 ACC=4 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
-#BS=32768 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
+#BS=65536 ACC=4 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
+BS=32768 ACC=2 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
 
-export PORT=12452
+if [ "$USE_DOCKER" = "1" ]; then
+    export PORT=12452
+    bash clush-hvd.sh
+else
+    export PORT=22
+fi
+
 sleep 5
 if [ "$DEBUG" = "1" ]; then
     export LOGINTERVAL=1
@@ -45,7 +57,6 @@ else
     export OPTIONS="--phase2 --phase1_num_steps=$NUMSTEPS --start_step=$NUMSTEPS --local_fs"
     export NUMSTEPS=1563
 fi
-bash clush-hvd.sh
 BS=32768 ACC=8 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
 
 STEP_FORMATTED=$(printf "%07d" $NUMSTEPS)
