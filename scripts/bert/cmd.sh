@@ -11,7 +11,10 @@ export EPS_AFTER_SQRT=1
 export NO_SHARD=1
 export DTYPE=float16
 export MODEL=bert_24_1024_16
-export CKPTDIR=/bert/ckpts/stage1_64k_32k_base
+export CKPTDIR=/bert/ckpts/stage1_32k_base
+export CKPTDIR=~/haibin/tmp/ckpts/stage1_32k_base
+export DATA_HOME=/data
+export DATA_HOME=~/mxnet-data/bert-pretraining/datasets
 export CKPTINTERVAL=300000000
 export OPTIMIZER=lamb2
 export CLUSHUSER=ec2-user
@@ -34,8 +37,8 @@ if [ "$DEBUG" = "1" ]; then
 else
     export LOGINTERVAL=50
     export OPTIONS='--local_fs'
-    export NUMSTEPS=7813
-    #export NUMSTEPS=15625
+    #export NUMSTEPS=7813
+    export NUMSTEPS=15625
 fi
 #BS=65536 ACC=4 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
 BS=32768 ACC=2 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh

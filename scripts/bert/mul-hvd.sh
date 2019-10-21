@@ -22,8 +22,8 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
             -x EPS_AFTER_SQRT=$EPS_AFTER_SQRT \
             -x NO_SHARD=$NO_SHARD \
 	    --tag-output ompi_bind_DGX1.sh python3 run_pretraining.py \
-	    --data='/data/book-corpus/book-corpus-large-split/*.train,/data/enwiki/enwiki-feb-doc-split/*.train' \
-	    --data_eval='/data/book-corpus/book-corpus-large-split/*.test,/data/enwiki/enwiki-feb-doc-split/*.test' \
+	    --data="$DATA_HOME/book-corpus/book-corpus-large-split/*.train,/data/enwiki/enwiki-feb-doc-split/*.train" \
+	    --data_eval="$DATA_HOME/book-corpus/book-corpus-large-split/*.test,/data/enwiki/enwiki-feb-doc-split/*.test" \
 	    --optimizer $OPTIMIZER \
 	    --warmup_ratio $WARMUP_RATIO \
 	    --num_steps $NUMSTEPS \
