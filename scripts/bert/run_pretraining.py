@@ -263,6 +263,10 @@ def train(data_train, data_eval, model):
     if 'lamb' in args.optimizer:
         optim_params['bias_correction'] = True
 
+    param_idx2name = {}
+    param_idx2name.update(enumerate(model.collect_params().keys()))
+    optim_params['param_idx2name'] = param_idx2name
+
     dynamic_loss_scale = args.dtype == 'float16'
     if dynamic_loss_scale:
         if int(os.environ.get('LARGE_WINDOW', False)):

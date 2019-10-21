@@ -26,6 +26,52 @@ from mxnet.engine import bulk
 from mxnet.ndarray import zeros, ones_like, NDArray
 from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where
 
+import math
+
+
+from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where, norm, full
+
+
+def _projection(weight, var, alpha=0.1, iters=5, eps=1e-6):
+    var /= NDArray.mean(var)
+    scale = min(1, alpha / norm(weight))
+    if scale == 1:
+        return weight
+    alpha = square(full(shape=(1,), val=alpha, ctx=weight.context))
+    weight[:] *= sqrt(var)
+    var = 1 / var
+    z = weight * scale
+    beta = 1. / NDArray.max(var)
+    lam = beta
+    c = weight.copy()
+    for _ in range(iters):
+        Az = var * z
+        c[:] = z
+        c -= lam * Az
+        gamma = lam * norm(Az)
+        gamma += sqrt(beta) * (sqrt(alpha) - sqrt(NDArray.sum(z * Az)))
+        shift_weight = weight - c
+        y = shift_weight * min(1, gamma / norm(shift_weight))
+        y += c
+        if sqrt(NDArray.sum(y * var * y)) <= alpha:
+            v = y
+        else:
+            d = z - y
+            denom = NDArray.sum(d * var * d) + eps
+            dAz = NDArray.sum(d * Az)
+            nom = dAz + sqrt(square(dAz) - denom * (NDArray.sum(z * Az) - alpha))
+            tau = nom / denom
+            v = z + tau * (y - z)
+        d = v - weight
+        denom = NDArray.sum(d * var * d) + eps
+        Av = var * v
+        dAv = NDArray.sum(d * Av)
+        nom = dAv + sqrt(square(dAv) - denom * (NDArray.sum(v * Av) - alpha))
+        tau = nom / denom
+        z[:] = v + tau * (weight - v)
+    z[:] *= sqrt(var)
+    return z
+
 @register
 class LAMB2(Optimizer):
     """The LAMB optimizer proposed in
@@ -96,6 +142,16 @@ class LAMB2(Optimizer):
             self._use_bound = True
         else:
             self._use_bound = False
+        if int(os.environ.get('USE_PROJ', False)):
+            logging.info("use projection")
+            self._use_proj = True
+        else:
+            self._use_proj = False
+        if int(os.environ.get('FORCE_WD', False)):
+            logging.info("force wd")
+            self._force_wd = True
+        else:
+            self._force_wd = False
 
 
     def create_state(self, index, weight):
@@ -115,6 +171,7 @@ class LAMB2(Optimizer):
         lr = self._get_lr(index)
         wd = self._get_wd(index)
         t = self._index_update_count[index]
+        name = self.idx2name[index]
 
         with bulk(self._bulk):
             # preprocess grad
@@ -138,7 +195,13 @@ class LAMB2(Optimizer):
             else:
                 # apply bias correction
                 if self._use_bound:
-                    r1 = minimum(maximum(r1, self.lower_bound), self.upper_bound)
+                    upper_bound = self.upper_bound
+                    if self._use_proj:
+                        if 'weight' in name:
+                            upper_bound = min(upper_bound, 0.01 * math.sqrt(weight.size))
+                        if 'classifier' in name:
+                            upper_bound = min(upper_bound, 0.04 * math.sqrt(weight.size))
+                    r1 = minimum(maximum(r1, self.lower_bound), upper_bound)
                 mean_hat = mean / (1. - power(self.beta1, t))
                 var_hat = var / (1. - power(self.beta2, t))
                 if self._eps_after_sqrt:
@@ -148,7 +211,8 @@ class LAMB2(Optimizer):
                     var_hat += self.epsilon
                     sqrt(var_hat, out=var_hat)
                 mean_hat /= var_hat
-                mean_hat += wd * weight
+                if not self._use_proj or self._force_wd:
+                    mean_hat += wd * weight
                 g = mean_hat
 
             r2 = g.norm()
@@ -163,6 +227,18 @@ class LAMB2(Optimizer):
             # update weight
             g *= lr
             weight[:] -= g
+
+            if self._use_proj:
+                alpha = 0
+                if 'weight' in name:
+                    alpha = 0.01 * math.sqrt(weight.size)
+                if 'classifier' in name:
+                    alpha = 0.04 * math.sqrt(weight.size)
+                if alpha:
+                    import logging
+                    logging.info("before project: name = {}, norm = {}".format(name, weight.norm().asscalar()))
+                    weight[:] = _projection(weight, var_hat, alpha=alpha)
+                    logging.info("after project: name = {}, norm = {}".format(name, weight.norm().asscalar()))
 
 def grad_global_norm(parameters, max_norm):
     """Calculate the 2-norm of gradients of parameters, and how much they should be scaled down

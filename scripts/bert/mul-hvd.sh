@@ -19,6 +19,8 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
 	    -x HOROVOD_CYCLE_TIME=30 \
 	    -x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=120 \
             -x NO_DROPOUT=$NO_DROPOUT \
+            -x USE_PROJ=$USE_PROJ \
+            -x FORCE_WD=$FORCE_WD \
             -x LD_LIBRARY_PATH=$HOME/aws-ofi-nccl/install/lib/:$HOME/nccl/build/lib:/usr/local/cuda-10.0/lib64:/opt/amazon/efa/lib64:$LD_LIBRARY_PATH \
 	    -x LARGE_WINDOW=1 \
 	    -x MXNET_SAFE_ACCUMULATION=1 \
