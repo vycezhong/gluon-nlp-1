@@ -28,7 +28,7 @@ from mxnet.ndarray import zeros, ones_like, NDArray
 from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where, norm, full
 
 
-def _projection(weight, var, alpha=0.1, iters=50, eps=1e-6):
+def _projection(weight, var, alpha=0.1, iters=10, eps=1e-6):
     var /= NDArray.mean(var)
     scale = min(1, alpha / norm(weight))
     if scale == 1:
