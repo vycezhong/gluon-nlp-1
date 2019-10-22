@@ -309,7 +309,7 @@ def train(data_train, data_eval, model):
     train_begin_time = time.time()
     begin_time = time.time()
     running_mlm_loss, running_nsp_loss = 0, 0
-    local_mlm_loss, local_num_masks = 0, mx.nd.array([0], ctx=ctxs[0])
+    local_mlm_loss, local_num_masks = mx.nd.array([0], ctx=ctxs[0]), mx.nd.array([0], ctx=ctxs[0])
     running_num_tks = 0
     batch_num = 0
     step_num = args.start_step
@@ -335,6 +335,9 @@ def train(data_train, data_eval, model):
         bps.byteps_declare_tensor(sync_point, "sync_point")
         bps.byteps_push_pull(sync_point, is_average=False, name="sync_point", priority=0)
         sync_point.wait_to_read()
+        bps.byteps_declare_tensor(local_mlm_loss, "local_mlm_loss")
+        bps.byteps_push_pull(local_mlm_loss, is_average=False, name="local_mlm_loss", priority=0)
+        local_mlm_loss.wait_to_read()
 
         next_batch = next(iter(get_dummy_dataloader(batch_size, args.max_seq_length, args.max_predictions_per_seq)))
         data_list = list(split_and_load(next_batch, ctxs))
@@ -398,12 +401,17 @@ def train(data_train, data_eval, model):
 
             # update
             if (batch_num + 1) % accumulate == 0:
-                running_mlm_loss += local_mlm_loss / local_num_masks
                 if backend == 'horovod':
+                    hvd.allreduce_(local_mlm_loss, average=False, name='local_mlm_loss')
                     hvd.allreduce_(local_num_masks, average=False, name='local_num_masks')
                 elif backend == 'byteps':
+                    bps.byteps_push_pull(local_mlm_loss, is_average=False,
+                                         name="local_mlm_loss", priority=0)
                     bps.byteps_push_pull(local_num_masks, is_average=False,
                                          name="local_num_masks", priority=0)
+                else:
+                    raise ValueError
+                running_mlm_loss += local_mlm_loss / local_num_masks
                 # because byteps and horovod implicitly set scale /= num_workers
                 fp16_trainer.step(local_num_masks / num_workers, max_norm=local_num_masks,
                                   num_ctxs=len(ctxs) * num_workers)
