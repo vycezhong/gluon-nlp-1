@@ -151,6 +151,11 @@ class LAMB2(Optimizer):
             self._force_wd = True
         else:
             self._force_wd = False
+        if int(os.environ.get('ADJUST_BOUND', False)):
+            logging.info("adjusting bound ")
+            self._adjust_bound = True
+        else:
+            self._adjust_bound = False
 
 
     def create_state(self, index, weight):
@@ -195,10 +200,10 @@ class LAMB2(Optimizer):
                 # apply bias correction
                 if self._use_bound:
                     upper_bound = self.upper_bound
-                    if self._use_proj:
+                    if self._use_proj or self._adjust_bound:
                         if 'weight' in name:
                             upper_bound = min(upper_bound, 0.01 * math.sqrt(weight.size))
-                        if 'classifier' in name:
+                        if 'classifier' in name or 'cls' in name:
                             upper_bound = min(upper_bound, 0.04 * math.sqrt(weight.size))
                     r1 = minimum(maximum(r1, self.lower_bound), upper_bound)
                 mean_hat = mean / (1. - power(self.beta1, t))
@@ -231,13 +236,13 @@ class LAMB2(Optimizer):
                 alpha = 0
                 if 'weight' in name:
                     alpha = 0.01 * math.sqrt(weight.size)
-                if 'classifier' in name:
+                if 'classifier' in name or 'cls' in name:
                     alpha = 0.04 * math.sqrt(weight.size)
                 if alpha:
                     import logging
-                    logging.info("before project: name = {}, norm = {}".format(name, weight.norm().asscalar()))
+                    # logging.info("before project: name = {}, norm = {}".format(name, weight.norm().asscalar()))
                     weight[:] = _projection(weight, var_hat, alpha=alpha)
-                    logging.info("after project: name = {}, norm = {}".format(name, weight.norm().asscalar()))
+                    # logging.info("after project: name = {}, norm = {}".format(name, weight.norm().asscalar()))
 
 def grad_global_norm(parameters, max_norm):
     """Calculate the 2-norm of gradients of parameters, and how much they should be scaled down
