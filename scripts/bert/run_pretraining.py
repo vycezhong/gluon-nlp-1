@@ -326,10 +326,16 @@ def train(data_train, data_eval, model):
     num_ctxes = len(ctxs)
     parallel = nlp.utils.Parallel(num_ctxes if num_ctxes > 1 else 0, parallel_model)
 
+    sync_point = mx.nd.ones((1), ctx=mx.gpu(local_rank))
     if backend == 'byteps':
+        logging.debug('Broadcast local_num_masks tensor')
         bps.byteps_declare_tensor(local_num_masks, "local_num_masks")
         bps.byteps_push_pull(local_num_masks, is_average=False, name="local_num_masks", priority=0)
-        logging.debug('Broadcast local_num_masks tensor')
+        local_num_masks.wait_to_read()
+        bps.byteps_declare_tensor(sync_point, "sync_point")
+        bps.byteps_push_pull(sync_point, is_average=False, name="sync_point", priority=0)
+        sync_point.wait_to_read()
+
         next_batch = next(iter(get_dummy_dataloader(batch_size, args.max_seq_length, args.max_predictions_per_seq)))
         data_list = list(split_and_load(next_batch, ctxs))
         parallel.put(data_list[0])
@@ -523,7 +529,6 @@ if __name__ == '__main__':
                                              len(ctxs), shuffle, 1, vocab)
 
         evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, local_rank, 8)
-    sync_point = mx.nd.ones((1), ctx=mx.gpu(local_rank))
     if backend == 'horovod':
         hvd.allreduce_(sync_point, average=False, name='sync_point')
     elif backend == 'byteps':
