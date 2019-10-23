@@ -255,7 +255,7 @@ def train(data_train, data_eval, model):
     mlm_metric.reset()
     nsp_metric.reset()
 
-    logging.debug('Creating distributed trainer...')
+    logging.info('Creating distributed trainer...')
     lr = args.lr
     optim_params = {'learning_rate': lr, 'epsilon': 1e-6, 'wd': 0.01}
     if args.dtype == 'float16':
@@ -318,8 +318,7 @@ def train(data_train, data_eval, model):
     if args.phase2:
         step_num -= args.phase1_num_steps
 
-    logging.debug('Training started')
-    logging.info('Generating the first batch of data, which may take a few minutes ...')
+    logging.info('Training started')
 
     # create dummy data loader if needed
     parallel_model = DataParallelBERT(model, trainer=fp16_trainer)
@@ -345,6 +344,7 @@ def train(data_train, data_eval, model):
         parallel.get()
         trainer._init_params()
 
+    logging.info('Generating the first batch of data, which may take a few minutes ...')
     while step_num < num_train_steps:
 
         data_train_iter = iter(data_train)
