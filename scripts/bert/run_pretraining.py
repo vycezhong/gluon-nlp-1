@@ -327,7 +327,7 @@ def train(data_train, data_eval, model):
 
     sync_point = mx.nd.ones((1), ctx=mx.gpu(local_rank))
     if backend == 'byteps':
-        logging.debug('Broadcast local_num_masks tensor')
+        logging.info('Broadcast local_num_masks tensor')
         bps.byteps_declare_tensor(local_num_masks, "local_num_masks")
         bps.byteps_push_pull(local_num_masks, is_average=False, name="local_num_masks", priority=0)
         local_num_masks.wait_to_read()
@@ -337,6 +337,7 @@ def train(data_train, data_eval, model):
         bps.byteps_declare_tensor(local_mlm_loss, "local_mlm_loss")
         bps.byteps_push_pull(local_mlm_loss, is_average=False, name="local_mlm_loss", priority=0)
         local_mlm_loss.wait_to_read()
+        logging.info('Broadcast local_num_masks tensor DONE')
 
         next_batch = next(iter(get_dummy_dataloader(batch_size, args.max_seq_length, args.max_predictions_per_seq)))
         data_list = list(split_and_load(next_batch, ctxs))
