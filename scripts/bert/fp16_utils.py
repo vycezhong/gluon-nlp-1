@@ -129,15 +129,17 @@ class LAMB2(Optimizer):
         self.upper_bound = upper_bound
         self.bias_correction = bias_correction
         import os
+        import logging
         if os.environ.get('EPS_AFTER_SQRT', False):
+            logging.info('self._eps_after_sqrt = ' + str(self._eps_after_sqrt))
             self._eps_after_sqrt = True
         else:
             self._eps_after_sqrt = False
         self._bulk = int(os.environ.get('LAMB_BULK', 0))
-        import logging
-        logging.info('self._eps_after_sqrt = ' + str(self._eps_after_sqrt) + " bulk = " + str(self._bulk))
+        logging.info(" bulk = " + str(self._bulk))
         self._verbose = verbose
         if os.environ.get('USE_BOUND', False):
+            logging.info("using upper lower bound")
             self._use_bound = True
         else:
             self._use_bound = False
@@ -156,6 +158,7 @@ class LAMB2(Optimizer):
             self._adjust_bound = True
         else:
             self._adjust_bound = False
+        #logging.info('attrs = {}'.format(str(self.__dict__)))
 
 
     def create_state(self, index, weight):

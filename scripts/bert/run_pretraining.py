@@ -255,7 +255,7 @@ def train(data_train, data_eval, model):
     mlm_metric.reset()
     nsp_metric.reset()
 
-    logging.debug('Creating distributed trainer...')
+    logging.info('Creating distributed trainer...')
     lr = args.lr
     optim_params = {'learning_rate': lr, 'epsilon': 1e-6, 'wd': 0.01}
     if args.dtype == 'float16':
@@ -310,7 +310,7 @@ def train(data_train, data_eval, model):
     train_begin_time = time.time()
     begin_time = time.time()
     running_mlm_loss, running_nsp_loss = 0, 0
-    local_mlm_loss, local_num_masks = 0, mx.nd.array([0], ctx=ctxs[0])
+    local_mlm_loss, local_num_masks = mx.nd.array([0], ctx=ctxs[0]), mx.nd.array([0], ctx=ctxs[0])
     running_num_tks = 0
     batch_num = 0
     step_num = args.start_step
@@ -319,24 +319,34 @@ def train(data_train, data_eval, model):
     if args.phase2:
         step_num -= args.phase1_num_steps
 
-    logging.debug('Training started')
-    logging.info('Generating the first batch of data, which may take a few minutes ...')
+    logging.info('Training started')
 
     # create dummy data loader if needed
     parallel_model = DataParallelBERT(model, trainer=fp16_trainer)
     num_ctxes = len(ctxs)
     parallel = nlp.utils.Parallel(num_ctxes if num_ctxes > 1 else 0, parallel_model)
 
+    sync_point = mx.nd.ones((1), ctx=mx.gpu(local_rank))
     if backend == 'byteps':
+        logging.info('Broadcast local_num_masks tensor')
         bps.byteps_declare_tensor(local_num_masks, "local_num_masks")
         bps.byteps_push_pull(local_num_masks, is_average=False, name="local_num_masks", priority=0)
-        logging.debug('Broadcast local_num_masks tensor')
+        local_num_masks.wait_to_read()
+        bps.byteps_declare_tensor(sync_point, "sync_point")
+        bps.byteps_push_pull(sync_point, is_average=False, name="sync_point", priority=0)
+        sync_point.wait_to_read()
+        bps.byteps_declare_tensor(local_mlm_loss, "local_mlm_loss")
+        bps.byteps_push_pull(local_mlm_loss, is_average=False, name="local_mlm_loss", priority=0)
+        local_mlm_loss.wait_to_read()
+        logging.info('Broadcast local_num_masks tensor DONE')
+
         next_batch = next(iter(get_dummy_dataloader(batch_size, args.max_seq_length, args.max_predictions_per_seq)))
         data_list = list(split_and_load(next_batch, ctxs))
         parallel.put(data_list[0])
         parallel.get()
         trainer._init_params()
 
+    logging.info('Generating the first batch of data, which may take a few minutes ...')
     while step_num < num_train_steps:
 
         data_train_iter = iter(data_train)
@@ -393,12 +403,17 @@ def train(data_train, data_eval, model):
 
             # update
             if (batch_num + 1) % accumulate == 0:
-                running_mlm_loss += local_mlm_loss / local_num_masks
                 if backend == 'horovod':
+                    hvd.allreduce_(local_mlm_loss, average=False, name='local_mlm_loss')
                     hvd.allreduce_(local_num_masks, average=False, name='local_num_masks')
                 elif backend == 'byteps':
+                    bps.byteps_push_pull(local_mlm_loss, is_average=False,
+                                         name="local_mlm_loss", priority=0)
                     bps.byteps_push_pull(local_num_masks, is_average=False,
                                          name="local_num_masks", priority=0)
+                else:
+                    raise ValueError
+                running_mlm_loss += local_mlm_loss / local_num_masks
                 # because byteps and horovod implicitly set scale /= num_workers
                 fp16_trainer.step(local_num_masks / num_workers, max_norm=local_num_masks,
                                   num_ctxs=len(ctxs) * num_workers)
@@ -524,7 +539,6 @@ if __name__ == '__main__':
                                              len(ctxs), shuffle, 1, vocab)
 
         evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, local_rank, 8)
-    sync_point = mx.nd.ones((1), ctx=mx.gpu(local_rank))
     if backend == 'horovod':
         hvd.allreduce_(sync_point, average=False, name='sync_point')
     elif backend == 'byteps':
