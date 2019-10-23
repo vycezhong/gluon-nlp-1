@@ -32,6 +32,7 @@ export DATA="${DATA:-/data/book-corpus/book-corpus-large-split/*.train,/data/enw
 export DATAEVAL="${DATAEVAL:-/data/book-corpus/book-corpus-large-split/*.test,/data/enwiki/enwiki-feb-doc-split/*.test}"
 
 echo $NVIDIA_VISIBLE_DEVICES
+mkdir -p $CKPTDIR
 
 python3 $BPS_HOME/launcher/launch.py \
 	python3 run_pretraining.py \
@@ -52,6 +53,4 @@ python3 $BPS_HOME/launcher/launch.py \
 	    --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
 	    --num_data_workers 4 \
 	    --no_compute_acc \
-	    --comm_backend byteps --log_interval $LOGINTERVAL $OPTIONS 2>&1 | tee -a full.log
-
-# --raw
+	    --comm_backend byteps --log_interval $LOGINTERVAL $OPTIONS 2>&1 | tee -a $CKPTDIR/std.log.$DMLC_WORKER_ID
