@@ -131,8 +131,8 @@ class LAMB2(Optimizer):
         import os
         import logging
         if os.environ.get('EPS_AFTER_SQRT', False):
-            logging.info('self._eps_after_sqrt = ' + str(self._eps_after_sqrt))
             self._eps_after_sqrt = True
+            logging.info('self._eps_after_sqrt = ' + str(self._eps_after_sqrt))
         else:
             self._eps_after_sqrt = False
         self._bulk = int(os.environ.get('LAMB_BULK', 0))
@@ -158,7 +158,7 @@ class LAMB2(Optimizer):
             self._adjust_bound = True
         else:
             self._adjust_bound = False
-        #logging.info('attrs = {}'.format(str(self.__dict__)))
+        logging.info('attrs = {}'.format(str(self.__dict__)))
 
 
     def create_state(self, index, weight):

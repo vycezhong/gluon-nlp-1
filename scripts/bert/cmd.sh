@@ -26,6 +26,7 @@ export EVALINTERVAL=100000000
 export COMMIT=58435d04
 export NO_DROPOUT=0
 export USE_BOUND=1
+export USE_BOUND=1
 export WINDOW_SIZE=2000
 
 if [ "$USE_DOCKER" = "1" ]; then
