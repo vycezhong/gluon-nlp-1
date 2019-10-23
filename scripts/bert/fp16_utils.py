@@ -158,7 +158,7 @@ class LAMB2(Optimizer):
             self._adjust_bound = True
         else:
             self._adjust_bound = False
-        logging.info('attrs = {}'.format(str(self.__dict__)))
+        #logging.info('attrs = {}'.format(str(self.__dict__)))
 
 
     def create_state(self, index, weight):
