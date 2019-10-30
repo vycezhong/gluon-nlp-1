@@ -174,6 +174,7 @@ class DataParallelBERT(nlp.utils.Parallelizable):
                               next_sentence_label, segment_id, valid_length)
             classified, decoded, ls1, ls2, num_masks = out
             ls = ls1 + ls2
+            ls = ls / args.accumulate
         if self._trainer:
             self._trainer.backward(ls)
         else:
@@ -243,6 +244,20 @@ logging.info("{} / {}".format(rank, num_workers))
 
 early_stop = os.environ.get('HOROVOD_TIMELINE', None)
 
+def grad_fn(model, acc_grad_dict, ctxs, req='zero'):
+    for k, v in model.collect_params().items():
+        if v.grad_req == 'null':
+            continue
+        for i, context in enumerate(ctxs):
+            if req == 'zero':
+                acc_grad_dict[k][i][:] = 0
+            elif req == 'add':
+                acc_grad_dict[k][i][:] += v.grad(context)
+            elif req == 'assign':
+                v.grad(context)[:] = acc_grad_dict[k][i]
+            else:
+                raise NotImplementedError
+
 def train(data_train, data_eval, model):
     """Training function."""
     # backend specific implementation
@@ -257,7 +272,7 @@ def train(data_train, data_eval, model):
 
     logging.info('Creating distributed trainer...')
     lr = args.lr
-    optim_params = {'learning_rate': lr, 'epsilon': 1e-6, 'wd': 0.01}
+    optim_params = {'learning_rate': lr, 'epsilon': 1e-6, 'wd': 0.01, 'num_heads': 16}
     if args.dtype == 'float16':
         optim_params['multi_precision'] = True
     if 'lamb' in args.optimizer:
@@ -325,6 +340,7 @@ def train(data_train, data_eval, model):
     parallel_model = DataParallelBERT(model, trainer=fp16_trainer)
     num_ctxes = len(ctxs)
     parallel = nlp.utils.Parallel(num_ctxes if num_ctxes > 1 else 0, parallel_model)
+    #acc_grad_dict = None
 
     sync_point = mx.nd.ones((1), ctx=mx.gpu(local_rank))
     if backend == 'byteps':
@@ -358,15 +374,12 @@ def train(data_train, data_eval, model):
                 break
             if batch_num % accumulate == 0:
                 step_num += 1
-                # if accumulate > 1, grad_req is set to 'add', and zero_grad is required
-                if accumulate > 1:
-                    param_dict.zero_grad()
                 # update learning rate
                 if step_num <= num_warmup_steps:
                     new_lr = lr * step_num / num_warmup_steps
                 else:
-                    offset = lr * step_num / num_train_steps
-                    new_lr = lr - offset
+                    offset = (num_train_steps - step_num) / (num_train_steps - num_warmup_steps)
+                    new_lr = lr * max(offset, 0)
                 trainer.set_learning_rate(new_lr)
                 if args.profile:
                     profile(step_num, 10, 14, profile_name=args.profile + str(rank))
@@ -401,23 +414,31 @@ def train(data_train, data_eval, model):
             except StopIteration:
                 end_of_batch = True
 
+            #if acc_grad_dict == None:
+            #    acc_grad_dict = {k: [mx.nd.zeros_like(v.grad(context)) for context in ctxs] for k, v in model.collect_params().items() if v.grad_req != 'null'}
+            #else:
+            #    grad_fn(model, acc_grad_dict, ctxs, req='add')
             # update
             if (batch_num + 1) % accumulate == 0:
+                #grad_fn(model, acc_grad_dict, ctxs, req='assign')
                 if backend == 'horovod':
-                    hvd.allreduce_(local_mlm_loss, average=False, name='local_mlm_loss')
+                    hvd.allreduce_(local_mlm_loss, average=True, name='local_mlm_loss')
                     hvd.allreduce_(local_num_masks, average=False, name='local_num_masks')
                 elif backend == 'byteps':
-                    bps.byteps_push_pull(local_mlm_loss, is_average=False,
+                    bps.byteps_push_pull(local_mlm_loss, is_average=True,
                                          name="local_mlm_loss", priority=0)
                     bps.byteps_push_pull(local_num_masks, is_average=False,
                                          name="local_num_masks", priority=0)
                 else:
                     raise ValueError
-                running_mlm_loss += local_mlm_loss / local_num_masks
+                running_mlm_loss += local_mlm_loss / args.accumulate
                 # because byteps and horovod implicitly set scale /= num_workers
-                fp16_trainer.step(local_num_masks / num_workers, max_norm=local_num_masks,
+                fp16_trainer.step(1., max_norm=1.0 * num_workers,
                                   num_ctxs=len(ctxs) * num_workers)
                 local_num_masks, local_mlm_loss = 0, 0
+                if accumulate > 1:
+                    param_dict.zero_grad()
+                #grad_fn(model, acc_grad_dict, ctxs, req='zero')
             # update metrics
             if args.no_compute_acc:
                 for mask_pred_i in mask_pred_list:
@@ -432,7 +453,7 @@ def train(data_train, data_eval, model):
                     log_noacc(begin_time, running_num_tks, running_mlm_loss,
                               0, step_num, trainer, args.log_interval)
                 else:
-                    log(begin_time, running_num_tks, running_mlm_loss / accumulate,
+                    log(begin_time, running_num_tks, running_mlm_loss,
                         running_nsp_loss / accumulate, step_num, mlm_metric, nsp_metric,
                         trainer, args.log_interval)
                     mlm_metric.reset_local()

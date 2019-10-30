@@ -21,10 +21,14 @@ import os
 import logging
 import random
 import multiprocessing
+import math
+import warnings
 
 import numpy as np
 import mxnet as mx
 import gluonnlp as nlp
+
+from mxnet.gluon.data import Sampler
 
 from data.pretrain import BERTSamplerFn, BERTDataLoaderFn
 from data.dataloader import SimpleDatasetFn, DatasetLoader
@@ -34,6 +38,43 @@ from create_pretraining_data import create_training_instances
 __all__ = ['get_model_loss', 'get_pretrain_data_npz', 'get_dummy_dataloader',
            'save_parameters', 'save_states', 'evaluate', 'split_and_load',
            'get_pretrain_data_text', 'generate_dev_set', 'profile']
+
+class ShuffleSplitSampler(Sampler):
+    """Split the dataset into `num_parts` parts and randomly sample from the part
+    with index `part_index`.
+    The data is randomly shuffled at each iteration within each partition.
+    Parameters
+    ----------
+    length: int
+      Number of examples in the dataset
+    num_parts: int
+      Number of partitions which the data is split into
+    part_index: int
+      The index of the part to read from
+    """
+    def __init__(self, length, num_parts=1, part_index=0, seed=0):
+        if length % num_parts != 0:
+            warnings.warn('Length ({}) must be a multiple of the number of partitions ({}).'.format(length, num_parts))
+        self._seed = seed
+        self._state = np.random.RandomState(seed)
+        self._indices = list(range(length))
+        # Compute the length of each partition
+        part_len = length // num_parts
+        # Compute the start index for this partition
+        self._start = part_len * part_index
+        # Compute the end index for this partition
+        self._end = self._start + part_len
+        if part_index == num_parts - 1:
+            self._end = length
+
+    def __iter__(self):
+        self._state.shuffle(self._indices)
+        # Extract examples between `start` and `end`, shuffle and return them.
+        indices = list(self._indices[self._start:self._end])
+        return iter(indices)
+
+    def __len__(self):
+        return self._end - self._start
 
 def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
                    ckpt_dir=None, start_step=None):
@@ -190,7 +231,9 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
     sampler_fn = BERTSamplerFn(batch_size, shuffle, num_ctxes, num_buckets)
     dataloader_fn = BERTDataLoaderFn(num_ctxes, vocab)
 
-    split_sampler = nlp.data.SplitSampler(num_files, num_parts=num_parts, part_index=part_idx)
+    #file_sampler_cls = ShuffleSplitSampler
+    file_sampler_cls = nlp.data.SplitSampler
+    split_sampler = file_sampler_cls(num_files, num_parts=num_parts, part_index=part_idx)
     dataloader = DatasetLoader(data, split_sampler, dataset_fn, sampler_fn, dataloader_fn,
                                num_dataset_workers=num_workers)
     return dataloader
@@ -331,7 +374,7 @@ class BERTForPretrain(mx.gluon.Block):
                 next_sentence_label=None, segment_id=None, valid_length=None):
         # pylint: disable=arguments-differ
         """Predict with BERT for MLM and NSP. """
-        num_masks = masked_weight.sum()
+        num_masks = masked_weight.sum() + 1e-12
         valid_length = valid_length.reshape(-1)
         masked_id = masked_id.reshape(-1)
         _, _, classified, decoded = self.bert(input_id, segment_id, valid_length, masked_position)
@@ -339,7 +382,7 @@ class BERTForPretrain(mx.gluon.Block):
         ls1 = self.mlm_loss(decoded.astype('float32', copy=False),
                             masked_id, masked_weight.reshape((-1, 1)))
         ls2 = self.nsp_loss(classified.astype('float32', copy=False), next_sentence_label)
-        ls1 = ls1.sum()
+        ls1 = ls1.sum() / num_masks
         ls2 = ls2.mean()
         return classified, decoded, ls1, ls2, num_masks
 
@@ -380,7 +423,7 @@ def evaluate(data_eval, model, ctx, log_interval, dtype, rank, num_workers):
             mask_weight_list.append(masked_weight)
 
             valid_length = valid_length.astype('float32', copy=False)
-            running_mlm_loss += (ls1 / num_masks).as_in_context(mx.cpu())
+            running_mlm_loss += ls1.as_in_context(mx.cpu())
             running_nsp_loss += ls2.as_in_context(mx.cpu())
             running_num_tks += valid_length.sum().as_in_context(mx.cpu())
         nsp_metric.update(ns_label_list, ns_pred_list)

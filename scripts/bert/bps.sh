@@ -27,15 +27,17 @@ export NCCL_MIN_NRINGS="${NCCL_MIN_NRINGS:-16}"
 export MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD="${MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD:-120}"
 export MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_BWD="${MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_BWD:-120}"
 export MXNET_SAFE_ACCUMULATION="${MXNET_SAFE_ACCUMULATION:-1}"
-export OPTIONS="${OPTIONS:- }"
-export DATA="${DATA:-/data/book-corpus/book-corpus-large-split/*.train,/data/enwiki/enwiki-feb-doc-split/*.train}"
-export DATAEVAL="${DATAEVAL:-/data/book-corpus/book-corpus-large-split/*.test,/data/enwiki/enwiki-feb-doc-split/*.test}"
+export OPTIONS="${OPTIONS:---synthetic --use_eval_npz}"
+#export DATA="${DATA:-/data/book-corpus/book-corpus-large-split/*.train,/data/enwiki/enwiki-feb-doc-split/*.train}"
+#export DATAEVAL="${DATAEVAL:-/data/book-corpus/book-corpus-large-split/*.test,/data/enwiki/enwiki-feb-doc-split/*.test}"
+export DATA="${DATA:-/data/book-wiki-split-2k-v3/*.train}"
+export DATAEVAL="${DATAEVAL:-/data/book-wiki-split-2k-v3/*.dev}"
 
 echo $NVIDIA_VISIBLE_DEVICES
 mkdir -p $CKPTDIR
 
-python3 $BPS_HOME/launcher/launch.py \
-	python3 run_pretraining.py \
+python3 -u $BPS_HOME/launcher/launch.py \
+	python3 -u run_pretraining.py \
             --data=$DATA \
             --data_eval=$DATAEVAL \
 	    --optimizer $OPTIMIZER \

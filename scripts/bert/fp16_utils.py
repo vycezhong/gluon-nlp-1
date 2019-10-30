@@ -16,6 +16,7 @@
 # under the License.
 
 """Trainer for mixed precision training."""
+import os
 import warnings
 import collections
 import mxnet as mx
@@ -120,7 +121,8 @@ class LAMB2(Optimizer):
     """
 
     def __init__(self, learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-6,
-                 lower_bound=1e-3, upper_bound=10.0, bias_correction=False, verbose=False, **kwargs):
+                 lower_bound=1e-3, upper_bound=10.0, bias_correction=False, verbose=False,
+                 num_heads=None,  **kwargs):
         super(LAMB2, self).__init__(learning_rate=learning_rate, **kwargs)
         self.beta1 = beta1
         self.beta2 = beta2
@@ -128,6 +130,8 @@ class LAMB2(Optimizer):
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
         self.bias_correction = bias_correction
+        self.num_heads = num_heads
+        self.att_list = ['query', 'key', 'value']
         import os
         import logging
         if os.environ.get('EPS_AFTER_SQRT', False):
@@ -138,7 +142,7 @@ class LAMB2(Optimizer):
         self._bulk = int(os.environ.get('LAMB_BULK', 0))
         logging.info(" bulk = " + str(self._bulk))
         self._verbose = verbose
-        if os.environ.get('USE_BOUND', False):
+        if int(os.environ.get('USE_BOUND', False)):
             logging.info("using upper lower bound")
             self._use_bound = True
         else:
@@ -158,14 +162,33 @@ class LAMB2(Optimizer):
             self._adjust_bound = True
         else:
             self._adjust_bound = False
+        if int(os.environ.get('SPLIT_HEAD', False)):
+            logging.info("splitting head ")
+            self._split_head = True
+            assert self.num_heads is not None, 'When SPLIT_HEAD=True, num_heads needs to be given.'
+        else:
+            self._split_head = False
         logging.info('attrs = {}'.format(str(self.__dict__)))
 
 
     def create_state(self, index, weight):
         stype = weight.stype
-        return (zeros(weight.shape, weight.context, dtype=weight.dtype,
+        name = self.idx2name[index]
+        att = False
+        for att_name in self.att_list:
+             if att_name in name:
+                 att = True
+                 break
+        if att and self._split_head:
+            if len(weight.shape) == 2:
+                shape = (self.num_heads, weight.shape[0] // self.num_heads, weight.shape[1])
+            else:
+                shape = (self.num_heads, weight.shape[0] // self.num_heads)
+        else:
+            shape = weight.shape
+        return (zeros(shape, weight.context, dtype=weight.dtype,
                       stype=stype),  # mean
-                zeros(weight.shape, weight.context, dtype=weight.dtype,
+                zeros(shape, weight.context, dtype=weight.dtype,
                       stype=stype))  # variance
 
     def update(self, index, weight, grad, state):
@@ -179,10 +202,25 @@ class LAMB2(Optimizer):
         wd = self._get_wd(index)
         t = self._index_update_count[index]
         name = self.idx2name[index]
+        att = False
+        for att_name in self.att_list:
+             if att_name in name:
+                 att = True
+                 break
 
         with bulk(self._bulk):
             # preprocess grad
             grad *= self.rescale_grad
+            if not att or not self._split_head:
+                grad /= grad.norm(ord=1)
+            else: 
+                if len(weight.shape) == 2:
+                    grad = grad.reshape((-4, self.num_heads, -1, 0))
+                else:
+                    grad = grad.reshape((-4, self.num_heads, -1))
+                #grad_norm = sqrt(mx.nd.sum(square(grad), axis=0, exclude=True, keepdims=True))
+                grad_norm = mx.nd.sum(mx.nd.abs(grad), axis=0, exclude=True, keepdims=True)
+                grad /= grad_norm
             if self.clip_gradient is not None:
                 grad = clip(grad, -self.clip_gradient, self.clip_gradient)
 
@@ -192,7 +230,15 @@ class LAMB2(Optimizer):
             var *= self.beta2
             var += (1. - self.beta2) * square(grad)
 
-            r1 = weight.norm()
+            if not att or not self._split_head:
+                r1 = weight.norm(ord=2)
+            else:
+                if len(weight.shape) == 2:
+                    weight = weight.reshape((-4, self.num_heads, -1, 0))
+                else:
+                    weight = weight.reshape((-4, self.num_heads, -1))
+                r1 = sqrt(mx.nd.sum(square(weight), axis=0, exclude=True, keepdims=True))
+                
             if not self.bias_correction:
                 r1 = minimum(maximum(r1, self.lower_bound), self.upper_bound)
                 sqrt_var = sqrt(var)
@@ -222,19 +268,24 @@ class LAMB2(Optimizer):
                     mean_hat += wd * weight
                 g = mean_hat
 
-            r2 = g.norm()
+            if not att or not self._split_head:
+                r2 = g.norm(ord=2)
+            else:
+                r2 = sqrt(mx.nd.sum(square(g), axis=0, exclude=True, keepdims=True))
 
             # calculate lamb_trust_ratio
             ratio = r1 / r2
             # becomes NaN if ratio == NaN or 0, otherwise 0
             nan_or_zero = 1 - ratio / ratio
             r = where(nan_or_zero, ones_like(ratio), ratio)
-            lr *= r
+            #lr *= r
 
             # update weight
-            g *= lr
+            g *= lr * r
             weight[:] -= g
 
+            #denom = 1 + wd * lr
+            #weight[:] /= denom
             if self._use_proj:
                 alpha = 0
                 if 'weight' in name:
@@ -390,10 +441,10 @@ class FP16Trainer:
         if num_ctxs and num_ctxs > 1:
             self.fp32_trainer.allreduce_grads()
         step_size = batch_size * self._scaler.loss_scale
-        if max_norm:
+        if max_norm is not None:
             _, ratio, is_finite = grad_global_norm(self.fp32_trainer._params,
                                                    max_norm * self._scaler.loss_scale)
-            step_size = ratio * step_size
+            #step_size = ratio * step_size
             if self._support_nan_check:
                 self.fp32_trainer.update(step_size)
                 overflow = is_finite.asscalar() < 1
