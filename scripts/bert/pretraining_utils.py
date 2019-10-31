@@ -147,8 +147,8 @@ class BERTPretrainDataset(mx.gluon.data.ArrayDataset):
 
     Parameters
     ----------
-    filename : str
-        Path to the input text file.
+    filename : str or list of str
+        Path to the input text files.
     tokenizer : BERTTokenizer
         The BERTTokenizer
     max_seq_length : int
@@ -173,7 +173,9 @@ class BERTPretrainDataset(mx.gluon.data.ArrayDataset):
                  vocab, num_workers=1, worker_pool=None):
         logging.debug('start to load file %s ...', filename)
         dupe_factor = 1
-        instances = create_training_instances(([filename], tokenizer, max_seq_length,
+        if not isinstance(filename, (list, tuple)):
+            filename = [filename]
+        instances = create_training_instances((filename, tokenizer, max_seq_length,
                                                short_seq_prob, masked_lm_prob,
                                                max_predictions_per_seq,
                                                whole_word_mask, vocab,
@@ -184,7 +186,7 @@ class BERTPretrainDataset(mx.gluon.data.ArrayDataset):
 def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
                            num_buckets, vocab, tokenizer, max_seq_length, short_seq_prob,
                            masked_lm_prob, max_predictions_per_seq, whole_word_mask,
-                           num_parts=1, part_idx=0, num_workers=1):
+                           num_parts=1, part_idx=0, num_workers=1, circle_length=1):
     """Get a data iterator from raw text documents.
 
     Parameters
@@ -217,6 +219,9 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
         The index of the partition to read.
     num_workers : int
         The number of worker processes for dataset contruction.
+    circle_length : int, default is 1
+        The number of files to be read for a single worker at the same time. When circle_length is larger than 1,
+        we merge circle_length files.
     """
     num_files = len(nlp.utils.glob(data))
     logging.info('%d files are found.', num_files)
@@ -235,7 +240,7 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
     file_sampler_cls = nlp.data.SplitSampler
     split_sampler = file_sampler_cls(num_files, num_parts=num_parts, part_index=part_idx)
     dataloader = DatasetLoader(data, split_sampler, dataset_fn, sampler_fn, dataloader_fn,
-                               num_dataset_workers=num_workers)
+                               num_dataset_workers=num_workers, circle_length=circle_length)
     return dataloader
 
 

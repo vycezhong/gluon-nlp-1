@@ -79,13 +79,14 @@ def _worker_fn(url, dataset_fn, sampler_fn):
 class _MultiWorkerIter:
     """Internal multi-worker iterator for DataLoader."""
     def __init__(self, worker_pool, worker_fn, dataset, file_sampler,
-                 dataset_fn, sampler_fn, dataloader_fn, prefetch):
+                 dataset_fn, sampler_fn, dataloader_fn, prefetch, circle_length=1):
         self._worker_pool = worker_pool
         self._worker_fn = worker_fn
         self._dataset_fn = dataset_fn
         self._sampler_fn = sampler_fn
         self._dataloader_fn = dataloader_fn
         self._prefetch = prefetch
+        self._circle_length = circle_length
 
         # send and receive index for datasets
         self._rcvd_idx = 0
@@ -105,8 +106,11 @@ class _MultiWorkerIter:
 
     def _push_next_dataset(self):
         """Assign next dataset workload to workers."""
-        if self._sent_idx < len(self._dataset):
-            url = self._dataset[self._sent_idx]
+        current_dataset_idx = self._sent_idx * self._circle_length
+        if current_dataset_idx < len(self._dataset):
+            circle_length = min(self._circle_length,
+                                len(self._dataset) - current_dataset_idx)
+            url = [self._dataset[current_dataset_idx + i] for i in range(circle_length)]
         else:
             return
         # push to worker asynchronously
@@ -193,9 +197,13 @@ class DatasetLoader:
         but will consume more memory. Using smaller number may forfeit the purpose of using
         multiple worker processes, try reduce `num_workers` in this case.
         By default it defaults to `num_workers`.
+    circle_length : int, default is 1
+        The number of files to be read at the same time. When circle_length is larger than 1,
+        we merge circle_length files.
     """
     def __init__(self, file_patterns, file_sampler, dataset_fn,
-                 sampler_fn, dataloader_fn, num_dataset_workers=1, prefetch=None):
+                 sampler_fn, dataloader_fn, num_dataset_workers=1, prefetch=None,
+                 circle_length=1):
         self._dataset = _PathDataset(file_patterns)
         self._file_sampler = file_sampler
         self._dataset_fn = dataset_fn
@@ -203,11 +211,14 @@ class DatasetLoader:
         self._dataloader_fn = dataloader_fn
         self._num_dataset_workers = num_dataset_workers
         self._prefetch = max(0, int(prefetch) if prefetch is not None else num_dataset_workers)
+        self._circle_length = circle_length
         self._worker_pool = None
         if self._num_dataset_workers > 0:
             self._worker_pool = multiprocessing.Pool(self._num_dataset_workers)
         assert self._num_dataset_workers >= 0, \
                'num_dataset_workers must be non-negative'
+        assert self._circle_length >= 1, \
+               'circle_length must be larger than or equal to 1'
         assert isinstance(sampler_fn, SamplerFn), \
                'sampler_fn must be an instance of SamplerFn'
         assert isinstance(dataloader_fn, DataLoaderFn), \
@@ -216,12 +227,18 @@ class DatasetLoader:
     def __iter__(self):
         if self._num_dataset_workers == 0:
             def _same_process_iter():
-                for idx in self._file_sampler:
-                    url = self._dataset[idx]
-                    dataset, sampler = _worker_fn(url, self._dataset_fn, self._sampler_fn)
+                urls = []
+                dataset = [self._dataset[i] for i in iter(self._file_sampler)]
+                for i, url in enumerate(dataset):
+                    urls.append(url)
+                    if i < len(dataset) - 1:
+                        if len(urls) < self._circle_length:
+                            continue
+                    dataset, sampler = _worker_fn(urls, self._dataset_fn, self._sampler_fn)
                     dataloader = self._dataloader_fn(dataset, sampler)
                     for batch in dataloader:
                         yield batch
+                    urls = []
             return _same_process_iter()
 
         # multi-worker
@@ -232,7 +249,8 @@ class DatasetLoader:
                                 dataset_fn=self._dataset_fn,
                                 sampler_fn=self._sampler_fn,
                                 dataloader_fn=self._dataloader_fn,
-                                prefetch=self._prefetch)
+                                prefetch=self._prefetch,
+                                circle_length=self._circle_length)
 
     def __del__(self):
         if self._worker_pool:

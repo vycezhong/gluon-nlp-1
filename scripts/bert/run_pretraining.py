@@ -134,6 +134,8 @@ parser.add_argument('--sentencepiece', default=None, type=str,
                          'Effective only if --raw is set.')
 parser.add_argument('--num_data_workers', type=int, default=8,
                     help='Number of workers to pre-process data.')
+parser.add_argument('--circle_length', type=int, default=32,
+                    help='Number of files to be read for a single GPU at the same time.')
 # communication
 parser.add_argument('--comm_backend', type=str, default='device',
                     choices=['horovod', 'dist_sync_device', 'device', 'byteps'],
