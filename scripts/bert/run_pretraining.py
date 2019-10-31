@@ -174,7 +174,7 @@ class DataParallelBERT(nlp.utils.Parallelizable):
                               next_sentence_label, segment_id, valid_length)
             classified, decoded, ls1, ls2, num_masks = out
             ls = ls1 + ls2
-            ls = ls / args.accumulate
+            #ls = ls / args.accumulate
         if self._trainer:
             self._trainer.backward(ls)
         else:
@@ -422,18 +422,19 @@ def train(data_train, data_eval, model):
             if (batch_num + 1) % accumulate == 0:
                 #grad_fn(model, acc_grad_dict, ctxs, req='assign')
                 if backend == 'horovod':
-                    hvd.allreduce_(local_mlm_loss, average=True, name='local_mlm_loss')
+                    hvd.allreduce_(local_mlm_loss, average=False, name='local_mlm_loss')
                     hvd.allreduce_(local_num_masks, average=False, name='local_num_masks')
                 elif backend == 'byteps':
-                    bps.byteps_push_pull(local_mlm_loss, is_average=True,
+                    bps.byteps_push_pull(local_mlm_loss, is_average=False,
                                          name="local_mlm_loss", priority=0)
                     bps.byteps_push_pull(local_num_masks, is_average=False,
                                          name="local_num_masks", priority=0)
                 else:
                     raise ValueError
-                running_mlm_loss += local_mlm_loss / args.accumulate
+                #running_mlm_loss += local_mlm_loss / args.accumulate
+                running_mlm_loss += local_mlm_loss / local_num_masks
                 # because byteps and horovod implicitly set scale /= num_workers
-                fp16_trainer.step(1., max_norm=1.0 * num_workers,
+                fp16_trainer.step(local_num_masks / num_workers, max_norm=local_num_masks,
                                   num_ctxs=len(ctxs) * num_workers)
                 local_num_masks, local_mlm_loss = 0, 0
                 if accumulate > 1:
@@ -453,7 +454,7 @@ def train(data_train, data_eval, model):
                     log_noacc(begin_time, running_num_tks, running_mlm_loss,
                               0, step_num, trainer, args.log_interval)
                 else:
-                    log(begin_time, running_num_tks, running_mlm_loss,
+                    log(begin_time, running_num_tks, running_mlm_loss / accumulate,
                         running_nsp_loss / accumulate, step_num, mlm_metric, nsp_metric,
                         trainer, args.log_interval)
                     mlm_metric.reset_local()
