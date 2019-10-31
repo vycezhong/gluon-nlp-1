@@ -54,5 +54,6 @@ python3 -u $BPS_HOME/launcher/launch.py \
 	    --max_seq_length $MAX_SEQ_LENGTH \
 	    --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
 	    --num_data_workers 4 \
+	    --circle_length 32 \
 	    --no_compute_acc \
 	    --comm_backend byteps --log_interval $LOGINTERVAL $OPTIONS > $CKPTDIR/std.log.$DMLC_WORKER_ID
