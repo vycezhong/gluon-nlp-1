@@ -512,8 +512,10 @@ class SplitSampler(Sampler):
       Number of partitions which the data is split into
     part_index: int
       The index of the part to read from
+    repeat: int
+      The number of times that files are repeated.
     """
-    def __init__(self, length, num_parts=1, part_index=0):
+    def __init__(self, length, num_parts=1, part_index=0, repeat=1):
         assert length >= num_parts, \
             'Length (%d) must be greater than or equal to the number of partitions (%d).'%\
             (length, num_parts)
@@ -525,12 +527,16 @@ class SplitSampler(Sampler):
         self._end = self._start + part_len
         if part_index == num_parts - 1:
             self._end = length
+        self._repeat = repeat
 
     def __iter__(self):
         # Extract examples between `start` and `end`, shuffle and return them.
-        indices = list(range(self._start, self._end))
-        random.shuffle(indices)
-        return iter(indices)
+        file_iter = []
+        for _ in range(self._repeat):
+            indices = list(range(self._start, self._end))
+            random.shuffle(indices)
+            file_iter.extend(indices)
+        return iter(file_iter)
 
     def __len__(self):
         return self._end - self._start

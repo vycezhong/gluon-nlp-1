@@ -186,7 +186,7 @@ class BERTPretrainDataset(mx.gluon.data.ArrayDataset):
 def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
                            num_buckets, vocab, tokenizer, max_seq_length, short_seq_prob,
                            masked_lm_prob, max_predictions_per_seq, whole_word_mask,
-                           num_parts=1, part_idx=0, num_workers=1, circle_length=1):
+                           num_parts=1, part_idx=0, num_workers=1, circle_length=1, repeat=1):
     """Get a data iterator from raw text documents.
 
     Parameters
@@ -222,6 +222,8 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
     circle_length : int, default is 1
         The number of files to be read for a single worker at the same time. When circle_length is larger than 1,
         we merge circle_length files.
+    repeat : int, default is 1
+        The number of times that files are repeated.
     """
     num_files = len(nlp.utils.glob(data))
     logging.info('%d files are found.', num_files)
@@ -238,7 +240,7 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
 
     #file_sampler_cls = ShuffleSplitSampler
     file_sampler_cls = nlp.data.SplitSampler
-    split_sampler = file_sampler_cls(num_files, num_parts=num_parts, part_index=part_idx)
+    split_sampler = file_sampler_cls(num_files, num_parts=num_parts, part_index=part_idx, repeat=repeat)
     dataloader = DatasetLoader(data, split_sampler, dataset_fn, sampler_fn, dataloader_fn,
                                num_dataset_workers=num_workers, circle_length=circle_length)
     return dataloader

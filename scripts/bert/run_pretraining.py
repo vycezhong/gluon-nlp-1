@@ -136,6 +136,8 @@ parser.add_argument('--num_data_workers', type=int, default=8,
                     help='Number of workers to pre-process data.')
 parser.add_argument('--circle_length', type=int, default=32,
                     help='Number of files to be read for a single GPU at the same time.')
+parser.add_argument('--repeat', type=int, default=8,
+                    help='Number of times that files are repeated in each shuffle.')
 # communication
 parser.add_argument('--comm_backend', type=str, default='device',
                     choices=['horovod', 'dist_sync_device', 'device', 'byteps'],
@@ -535,7 +537,9 @@ if __name__ == '__main__':
                                                masked_lm_prob=args.masked_lm_prob,
                                                max_predictions_per_seq=args.max_predictions_per_seq,
                                                whole_word_mask=args.whole_word_mask,
-                                               tokenizer=tokenizer)
+                                               tokenizer=tokenizer,
+                                               circle_length=args.circle_length,
+                                               repeat=args.repeat)
         else:
             get_dataset_fn = get_pretrain_data_npz
 
