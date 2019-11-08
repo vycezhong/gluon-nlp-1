@@ -36,6 +36,10 @@ export DATAEVAL="${DATAEVAL:-/data/book-wiki-split-2k-v3/*.dev}"
 echo $NVIDIA_VISIBLE_DEVICES
 mkdir -p $CKPTDIR
 
+            #--start_step 3519 \
+            #--phase2 \
+            #--phase1_num_steps 3519 \
+
 python3 -u $BPS_HOME/launcher/launch.py \
 	python3 -u run_pretraining.py \
             --data=$DATA \
@@ -53,8 +57,7 @@ python3 -u $BPS_HOME/launcher/launch.py \
 	    --model $MODEL \
 	    --max_seq_length $MAX_SEQ_LENGTH \
 	    --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
-	    --num_data_workers 4 \
-	    --circle_length 4 \
-            --repeat 4 \
-	    --no_compute_acc \
+	    --num_data_workers 8 \
+	    --circle_length 8 \
+            --repeat 16 \
 	    --comm_backend byteps --log_interval $LOGINTERVAL $OPTIONS > $CKPTDIR/std.log.$DMLC_WORKER_ID

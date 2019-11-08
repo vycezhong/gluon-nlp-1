@@ -110,7 +110,10 @@ class _MultiWorkerIter:
         if current_dataset_idx < len(self._dataset):
             circle_length = min(self._circle_length,
                                 len(self._dataset) - current_dataset_idx)
-            url = [self._dataset[current_dataset_idx + i] for i in range(circle_length)]
+            if self._circle_length > 1:
+                url = [self._dataset[current_dataset_idx + i] for i in range(circle_length)]
+            else:
+                url = self._dataset[current_dataset_idx]
         else:
             return
         # push to worker asynchronously

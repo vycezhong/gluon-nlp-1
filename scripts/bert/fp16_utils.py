@@ -212,7 +212,7 @@ class LAMB2(Optimizer):
             # preprocess grad
             grad *= self.rescale_grad
             if not att or not self._split_head:
-                grad /= grad.norm(ord=1)
+                grad /= grad.norm(ord=2)
             else: 
                 if len(weight.shape) == 2:
                     grad = grad.reshape((-4, self.num_heads, -1, 0))

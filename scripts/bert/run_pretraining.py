@@ -308,10 +308,10 @@ def train(data_train, data_eval, model):
     fp16_trainer = FP16Trainer(trainer, dynamic_loss_scale=dynamic_loss_scale,
                                loss_scaler_params=loss_scale_param)
 
-    if args.start_step:
-        state_path = os.path.join(args.ckpt_dir, '%07d.states.%02d'%(args.start_step, local_rank))
-        logging.info('Loading trainer state from %s', state_path)
-        nlp.utils.load_states(trainer, state_path)
+    #if args.start_step:
+    #    state_path = os.path.join(args.ckpt_dir, '%07d.states.%02d'%(args.start_step, local_rank))
+    #    logging.info('Loading trainer state from %s', state_path)
+    #    nlp.utils.load_states(trainer, state_path)
 
     accumulate = args.accumulate
     num_train_steps = args.num_steps
@@ -329,7 +329,7 @@ def train(data_train, data_eval, model):
     train_begin_time = time.time()
     begin_time = time.time()
     running_mlm_loss, running_nsp_loss = 0, 0
-    local_mlm_loss, local_num_masks = mx.nd.array([0], ctx=ctxs[0]), mx.nd.array([0], ctx=ctxs[0])
+    local_mlm_loss, local_nsp_loss, local_num_masks = mx.nd.array([0], ctx=ctxs[0]), mx.nd.array([0], ctx=ctxs[0]), mx.nd.array([0], ctx=ctxs[0])
     running_num_tks = 0
     batch_num = 0
     step_num = args.start_step
@@ -358,6 +358,9 @@ def train(data_train, data_eval, model):
         bps.byteps_declare_tensor(local_mlm_loss, "local_mlm_loss")
         bps.byteps_push_pull(local_mlm_loss, is_average=False, name="local_mlm_loss", priority=0)
         local_mlm_loss.wait_to_read()
+        bps.byteps_declare_tensor(local_nsp_loss, "local_nsp_loss")
+        bps.byteps_push_pull(local_nsp_loss, is_average=False, name="local_nsp_loss", priority=0)
+        local_nsp_loss.wait_to_read()
         logging.info('Broadcast local_num_masks tensor DONE')
 
         next_batch = next(iter(get_dummy_dataloader(batch_size, args.max_seq_length, args.max_predictions_per_seq)))
@@ -411,6 +414,7 @@ def train(data_train, data_eval, model):
                     mask_weight_list.append(masked_weight)
                     local_num_masks += num_masks
                     local_mlm_loss += ls1
+                    local_nsp_loss += ls2
                     running_num_tks += valid_length.sum()
             # pre fetch next batch
             try:
@@ -427,20 +431,24 @@ def train(data_train, data_eval, model):
                 #grad_fn(model, acc_grad_dict, ctxs, req='assign')
                 if backend == 'horovod':
                     hvd.allreduce_(local_mlm_loss, average=False, name='local_mlm_loss')
+                    hvd.allreduce_(local_nsp_loss, average=False, name='local_nsp_loss')
                     hvd.allreduce_(local_num_masks, average=False, name='local_num_masks')
                 elif backend == 'byteps':
                     bps.byteps_push_pull(local_mlm_loss, is_average=False,
                                          name="local_mlm_loss", priority=0)
+                    bps.byteps_push_pull(local_nsp_loss, is_average=False,
+                                         name="local_nsp_loss", priority=0)
                     bps.byteps_push_pull(local_num_masks, is_average=False,
                                          name="local_num_masks", priority=0)
                 else:
                     raise ValueError
                 #running_mlm_loss += local_mlm_loss / args.accumulate
                 running_mlm_loss += local_mlm_loss / local_num_masks
+                running_nsp_loss += local_nsp_loss / args.accumulate / num_workers
                 # because byteps and horovod implicitly set scale /= num_workers
                 fp16_trainer.step(local_num_masks / num_workers, max_norm=local_num_masks,
                                   num_ctxs=len(ctxs) * num_workers)
-                local_num_masks, local_mlm_loss = 0, 0
+                local_num_masks, local_mlm_loss, local_nsp_loss = 0, 0, 0
                 if accumulate > 1:
                     param_dict.zero_grad()
                 #grad_fn(model, acc_grad_dict, ctxs, req='zero')
@@ -458,8 +466,8 @@ def train(data_train, data_eval, model):
                     log_noacc(begin_time, running_num_tks, running_mlm_loss,
                               0, step_num, trainer, args.log_interval)
                 else:
-                    log(begin_time, running_num_tks, running_mlm_loss / accumulate,
-                        running_nsp_loss / accumulate, step_num, mlm_metric, nsp_metric,
+                    log(begin_time, running_num_tks, running_mlm_loss,
+                        running_nsp_loss, step_num, mlm_metric, nsp_metric,
                         trainer, args.log_interval)
                     mlm_metric.reset_local()
                     nsp_metric.reset_local()
@@ -567,10 +575,10 @@ if __name__ == '__main__':
                                              len(ctxs), shuffle, 1, vocab)
 
         evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, local_rank, 8)
-    if backend == 'horovod':
-        hvd.allreduce_(sync_point, average=False, name='sync_point')
-    elif backend == 'byteps':
-        bps.byteps_push_pull(sync_point, is_average=False,
-                             name="sync_point", priority=0)
-    sync_point.wait_to_read()
+    #if backend == 'horovod':
+    #    hvd.allreduce_(sync_point, average=False, name='sync_point')
+    #elif backend == 'byteps':
+    #    bps.byteps_push_pull(sync_point, is_average=False,
+    #                         name="sync_point", priority=0)
+    #sync_point.wait_to_read()
     logging.info("Done")
