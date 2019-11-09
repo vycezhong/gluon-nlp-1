@@ -183,8 +183,8 @@ parser.add_argument('--null_score_diff_threshold',
                     help='If null_score - best_non_null is greater than the threshold predict null.'
                     'Typical values are between -1.0 and -5.0. default is 0.0')
 
-parser.add_argument('--gpu',
-                    type=int,
+parser.add_argument('--gpus',
+                    type=str,
                     default=None,
                     help='which gpu to use for finetuning. CPU is used if not set.')
 
@@ -229,7 +229,7 @@ epochs = args.epochs
 batch_size = args.batch_size
 test_batch_size = args.test_batch_size
 lr = args.lr
-ctx = mx.cpu() if args.gpu is None else mx.gpu(args.gpu)
+ctx = [mx.cpu()] if args.gpus is None else [mx.gpu(int(i)) for i in args.gpus.split(',')]
 
 accumulate = args.accumulate
 log_interval = args.log_interval * accumulate if accumulate else args.log_interval
@@ -400,30 +400,39 @@ def train():
             # set new lr
             step_num = set_new_lr(step_num, batch_id)
             # forward and backward
+
+            _, inputs, token_types, valid_length, start_label, end_label = data
+            num_labels = len(inputs)
+            log_num += num_labels
+            total_num += num_labels
+
+            inputs = mx.gluon.utils.split_and_load(inputs, ctx, even_split=False)
+            token_types = mx.gluon.utils.split_and_load(token_types, ctx, even_split=False)
+            valid_length = mx.gluon.utils.split_and_load(valid_length, ctx, even_split=False)
+            start_label = mx.gluon.utils.split_and_load(start_label, ctx, even_split=False)
+            end_label = mx.gluon.utils.split_and_load(end_label, ctx, even_split=False)
+            losses = []
             with mx.autograd.record():
-                _, inputs, token_types, valid_length, start_label, end_label = data
+                for (inp, token_type, valid_len, start_l, end_l) in zip(inputs, token_types, valid_length, start_label, end_label):
+                    out = net(inp.astype('float32', copy=False),
+                              token_type.astype('float32', copy=False),
+                              valid_len.astype('float32', copy=False))
+                    ls = loss_function(out, [
+                        start_l.astype('float32', copy=False),
+                        end_l.astype('float32', copy=False)]).sum() / num_labels
 
-                log_num += len(inputs)
-                total_num += len(inputs)
+                    if accumulate:
+                        ls = ls / accumulate
+                    losses.append(ls)
 
-                out = net(inputs.astype('float32').as_in_context(ctx),
-                          token_types.astype('float32').as_in_context(ctx),
-                          valid_length.astype('float32').as_in_context(ctx))
-
-                ls = loss_function(out, [
-                    start_label.astype('float32').as_in_context(ctx),
-                    end_label.astype('float32').as_in_context(ctx)]).mean()
-
-                if accumulate:
-                    ls = ls / accumulate
-            ls.backward()
+            mx.autograd.backward(losses)
             # update
             if not accumulate or (batch_id + 1) % accumulate == 0:
                 trainer.allreduce_grads()
                 nlp.utils.clip_grad_global_norm(params, 1)
                 trainer.update(1)
 
-            step_loss += ls.asscalar()
+            step_loss += sum([ls.asscalar() for ls in losses])
 
             if (batch_id + 1) % log_interval == 0:
                 toc = time.time()
@@ -489,9 +498,9 @@ def evaluate():
     for data in dev_dataloader:
         example_ids, inputs, token_types, valid_length, _, _ = data
         total_num += len(inputs)
-        out = net(inputs.astype('float32').as_in_context(ctx),
-                  token_types.astype('float32').as_in_context(ctx),
-                  valid_length.astype('float32').as_in_context(ctx))
+        out = net(inputs.astype('float32').as_in_context(ctx[0]),
+                  token_types.astype('float32').as_in_context(ctx[0]),
+                  valid_length.astype('float32').as_in_context(ctx[0]))
 
         output = mx.nd.split(out, axis=2, num_outputs=2)
         example_ids = example_ids.asnumpy().tolist()
