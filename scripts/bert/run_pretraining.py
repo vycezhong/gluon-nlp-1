@@ -573,7 +573,9 @@ if __name__ == '__main__':
         shuffle = False
         dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
                                              len(ctxs), shuffle, 1, vocab)
-
+        #param_path = os.path.join(args.ckpt_dir, '%07d.params'%args.num_steps)
+        #nlp.utils.load_parameters(model.bert, param_path, ctx=ctxs, cast_dtype=True)
+        #logging.info('Loading step %d checkpoints from %s.', args.num_steps, param_path)
         evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, local_rank, 8)
     #if backend == 'horovod':
     #    hvd.allreduce_(sync_point, average=False, name='sync_point')

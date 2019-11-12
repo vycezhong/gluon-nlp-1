@@ -193,6 +193,11 @@ parser.add_argument('--sentencepiece',
                     default=None,
                     help='Path to the sentencepiece .model file for both tokenization and vocab.')
 
+parser.add_argument('--wd',
+                    type=float,
+                    default=0.,
+                    help='Weight decay.')
+
 parser.add_argument('--debug',
                     action='store_true',
                     help='Run the example in test mode for sanity checks')
@@ -341,7 +346,7 @@ def train():
 
     log.info('Start Training')
 
-    optimizer_params = {'learning_rate': lr}
+    optimizer_params = {'learning_rate': lr, 'wd': args.wd}
     try:
         trainer = mx.gluon.Trainer(net.collect_params(), optimizer,
                                    optimizer_params, update_on_kvstore=False)
@@ -430,7 +435,7 @@ def train():
             if not accumulate or (batch_id + 1) % accumulate == 0:
                 trainer.allreduce_grads()
                 nlp.utils.clip_grad_global_norm(params, 1)
-                trainer.update(1)
+                trainer.update(1, ignore_stale_grad=True)
 
             step_loss += sum([ls.asscalar() for ls in losses])
 

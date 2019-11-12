@@ -60,4 +60,7 @@ python3 -u $BPS_HOME/launcher/launch.py \
 	    --num_data_workers 8 \
 	    --circle_length 8 \
             --repeat 16 \
+            --start_step 7038 \
+            --phase2 \
+            --phase1_num_steps 7038 \
 	    --comm_backend byteps --log_interval $LOGINTERVAL $OPTIONS > $CKPTDIR/std.log.$DMLC_WORKER_ID
