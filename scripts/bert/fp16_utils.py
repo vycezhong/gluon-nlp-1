@@ -214,7 +214,7 @@ class LAMB2(Optimizer):
             grad *= self.rescale_grad
             #logging.info(name, grad.norm(ord=2).asscalar())
             if not att or not self._split_head:
-                grad /= grad.astype('float32').norm(ord=2)
+                grad /= grad.norm(ord=2)
             else: 
                 if len(weight.shape) == 2:
                     grad = grad.reshape((-4, self.num_heads, -1, 0))

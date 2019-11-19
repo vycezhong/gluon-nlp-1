@@ -291,9 +291,9 @@ def train(data_train, data_eval, model):
         if int(os.environ.get('WINDOW_SIZE', False)):
             window_size = int(os.environ.get('WINDOW_SIZE', False))
             logging.info("using window size = {}".format(window_size))
-            loss_scale_param = {'scale_window': window_size, 'init_scale': 1}
+            loss_scale_param = {'scale_window': window_size, 'init_scale': 2**14}
         else:
-            loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 1}
+            loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 2**14}
     else:
         loss_scale_param = None
 
@@ -442,12 +442,14 @@ def train(data_train, data_eval, model):
                                          name="local_num_masks", priority=0)
                 else:
                     raise ValueError
-                #running_mlm_loss += local_mlm_loss / args.accumulate
+                #running_mlm_loss += local_mlm_loss / args.accumulate / num_workers
                 running_mlm_loss += local_mlm_loss / local_num_masks
                 running_nsp_loss += local_nsp_loss / args.accumulate / num_workers
                 # because byteps and horovod implicitly set scale /= num_workers
                 fp16_trainer.step(local_num_masks / num_workers, max_norm=local_num_masks,
                                   num_ctxs=len(ctxs) * num_workers)
+                #fp16_trainer.step(args.accumulate, max_norm=args.accumulate * num_workers,
+                #                  num_ctxs=len(ctxs) * num_workers)
                 local_num_masks, local_mlm_loss, local_nsp_loss = 0, 0, 0
                 if accumulate > 1:
                     param_dict.zero_grad()

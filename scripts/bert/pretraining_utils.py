@@ -390,6 +390,7 @@ class BERTForPretrain(mx.gluon.Block):
                             masked_id, masked_weight.reshape((-1, 1)))
         ls2 = self.nsp_loss(classified.astype('float32', copy=False), next_sentence_label)
         ls1 = ls1.sum()
+        #ls1 = ls1.mean()
         ls2 = ls2.mean()
         return classified, decoded, ls1, ls2, num_masks
 
@@ -431,6 +432,7 @@ def evaluate(data_eval, model, ctx, log_interval, dtype, rank, num_workers):
 
             valid_length = valid_length.astype('float32', copy=False)
             running_mlm_loss += (ls1 / num_masks).as_in_context(mx.cpu())
+            #running_mlm_loss += ls1.as_in_context(mx.cpu())
             running_nsp_loss += ls2.as_in_context(mx.cpu())
             running_num_tks += valid_length.sum().as_in_context(mx.cpu())
         nsp_metric.update(ns_label_list, ns_pred_list)

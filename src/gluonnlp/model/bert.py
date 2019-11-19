@@ -188,7 +188,7 @@ class BERTEncoder(BaseTransformerEncoder):
                                           # extra configurations for BERT
                                           positional_weight='learned',
                                           use_bert_encoder=True,
-                                          use_layer_norm_before_dropout=False,
+                                          use_layer_norm_before_dropout=True,
                                           scale_embed=False,
                                           activation=activation,
                                           layer_norm_eps=layer_norm_eps)
@@ -398,8 +398,6 @@ class BERTModel(HybridBlock):
                 with embed.name_scope():
                     embed.add(nn.Embedding(input_dim=vocab_size, output_dim=embed_size,
                                            weight_initializer=initializer))
-                    if dropout:
-                        embed.add(nn.Dropout(rate=dropout))
         assert isinstance(embed, HybridBlock)
         return embed
 

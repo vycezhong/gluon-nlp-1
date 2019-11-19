@@ -47,6 +47,8 @@ import mxnet as mx
 
 import gluonnlp as nlp
 from gluonnlp.data import SQuAD
+from gluonnlp.utils.parallel import Parallel
+from gluonnlp.utils.parallel import Parallelizable
 from model.qa import BertForQALoss, BertForQA
 from data.qa import SQuADTransform, preprocess_dataset
 from bert_qa_evaluate import get_F1_EM, predict, PredResult
@@ -237,7 +239,7 @@ lr = args.lr
 ctx = [mx.cpu()] if args.gpus is None else [mx.gpu(int(i)) for i in args.gpus.split(',')]
 
 accumulate = args.accumulate
-log_interval = args.log_interval * accumulate if accumulate else args.log_interval
+log_interval = args.log_interval
 if accumulate:
     log.info('Using gradient accumulation. Effective batch size = {}'.
              format(accumulate*batch_size))
@@ -315,6 +317,28 @@ net.hybridize(static_alloc=True)
 loss_function = BertForQALoss()
 loss_function.hybridize(static_alloc=True)
 
+class ParallelSquad(Parallelizable):
+    def __init__(self, model, loss_function):
+        self._model = model
+        self._loss = loss_function
+
+    def forward_backward(self, x):
+        """Perform forward and backward computation for a batch of src seq and dst seq"""
+        inp, token_type, valid_len, start_l, end_l, num_labels = x
+        with mx.autograd.record():
+            out = net(inp.astype('float32', copy=False),
+                      token_type.astype('float32', copy=False),
+                      valid_len.astype('float32', copy=False))
+            ls = loss_function(out, [
+                               start_l.astype('float32', copy=False),
+                               end_l.astype('float32', copy=False)]).sum() / num_labels
+
+            if accumulate:
+                ls = ls / accumulate
+        ls.backward()
+        return ls
+
+parallel_model = ParallelSquad(net, loss_function)
 
 def train():
     """Training function."""
@@ -395,6 +419,8 @@ def train():
         for p in params:
             p.grad_req = 'add'
 
+    parallel = Parallel(len(ctx), parallel_model)    
+
     epoch_tic = time.time()
     total_num = 0
     log_num = 0
@@ -417,20 +443,9 @@ def train():
             start_label = mx.gluon.utils.split_and_load(start_label, ctx, even_split=False)
             end_label = mx.gluon.utils.split_and_load(end_label, ctx, even_split=False)
             losses = []
-            with mx.autograd.record():
-                for (inp, token_type, valid_len, start_l, end_l) in zip(inputs, token_types, valid_length, start_label, end_label):
-                    out = net(inp.astype('float32', copy=False),
-                              token_type.astype('float32', copy=False),
-                              valid_len.astype('float32', copy=False))
-                    ls = loss_function(out, [
-                        start_l.astype('float32', copy=False),
-                        end_l.astype('float32', copy=False)]).sum() / num_labels
-
-                    if accumulate:
-                        ls = ls / accumulate
-                    losses.append(ls)
-
-            mx.autograd.backward(losses)
+            for (inp, token_type, valid_len, start_l, end_l) in zip(inputs, token_types, valid_length, start_label, end_label):
+                parallel.put((inp, token_type, valid_len, start_l, end_l, num_labels))
+            losses = [parallel.get() for _ in range(len(inputs))]
             # update
             if not accumulate or (batch_id + 1) % accumulate == 0:
                 trainer.allreduce_grads()
@@ -439,7 +454,7 @@ def train():
 
             step_loss += sum([ls.asscalar() for ls in losses])
 
-            if (batch_id + 1) % log_interval == 0:
+            if (batch_id + 1) % (log_interval * (accumulate if accumulate else 1)) == 0:
                 toc = time.time()
                 log.info('Epoch: {}, Batch: {}/{}, Loss={:.4f}, lr={:.7f} Time cost={:.1f} Thoughput={:.2f} samples/s'  # pylint: disable=line-too-long
                          .format(epoch_id, batch_id, len(train_dataloader),
