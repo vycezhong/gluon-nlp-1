@@ -205,8 +205,8 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
     split_sampler = nlp.data.SplitSampler(num_files, num_parts=num_parts, part_index=part_idx, repeat=repeat)
     dataloader = DatasetLoader(data, file_sampler=split_sampler, dataset_fn=dataset_fn, batch_sampler_fn=sampler_fn,
                                dataset_params=dataset_params, batch_sampler_params=sampler_params,
-                               batchify_fn=batchify_fn, num_dataset_workers=num_workers, pin_memory=True,
-                               circle_length=circle_length)
+                               batchify_fn=batchify_fn, num_dataset_workers=num_workers, num_batch_workers=num_workers,
+                               pin_memory=True, circle_length=circle_length)
     return dataloader
 
 
@@ -260,8 +260,8 @@ def get_pretrain_data_npz(data, batch_size, num_ctxes, shuffle, num_buckets,
     split_sampler = nlp.data.SplitSampler(num_files, num_parts=num_parts, part_index=part_idx, repeat=repeat)
     dataloader = DatasetLoader(data, file_sampler=split_sampler, dataset_fn=dataset_fn, batch_sampler_fn=sampler_fn,
                                dataset_params=dataset_params, batch_sampler_params=sampler_params,
-                               batchify_fn=batchify_fn, num_dataset_workers=num_workers, pin_memory=True,
-                               circle_length=circle_length)
+                               batchify_fn=batchify_fn, num_dataset_workers=num_workers, num_batch_workers=num_workers,
+                               pin_memory=True, circle_length=circle_length)
     return dataloader
 
 

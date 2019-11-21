@@ -338,9 +338,9 @@ class DatasetLoader:
                 'num_dataset_workers must be positive when num_batch_workers > 0'
         else:
             if num_dataset_workers > 0:
-                warnings.warn('The multi-processing for both dataset and'
-                              ' batch sampling is disabled when num_dataset_workers=0 though '
-                              'num_batch_workers={} > 0'.format(num_batch_workers))
+                warnings.warn('The multi-processing functionalities for both dataset and'
+                              ' batch sampling are disabled when num_batch_workers=0 though '
+                              'num_dataset_workers={} > 0'.format(num_dataset_workers))
         assert circle_length >= 1, \
                'circle_length must be larger than or equal to 1'
         self._dataset = _PathDataset(file_patterns)
