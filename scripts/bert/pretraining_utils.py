@@ -142,7 +142,8 @@ def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
 def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
                            num_buckets, vocab, tokenizer, max_seq_length, short_seq_prob,
                            masked_lm_prob, max_predictions_per_seq, whole_word_mask,
-                           num_parts=1, part_idx=0, num_workers=1, circle_length=1, repeat=1):
+                           num_parts=1, part_idx=0, num_dataset_workers=1, num_batch_workers=1,
+                           circle_length=1, repeat=1):
     """Get a data iterator from raw text documents.
 
     Parameters
@@ -173,8 +174,10 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
         The number of partitions for the dataset.
     part_idx : int
         The index of the partition to read.
-    num_workers : int
-        The number of worker processes for dataset contruction.
+    num_dataset_workers : int
+        The number of worker processes for dataset construction.
+    num_batch_workers : int
+        The number of worker processes for batch construction.
     circle_length : int, default is 1
         The number of files to be read for a single worker at the same time. When circle_length is larger than 1,
         we merge circle_length files.
@@ -204,14 +207,16 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
                         Stack())
     split_sampler = nlp.data.SplitSampler(num_files, num_parts=num_parts, part_index=part_idx, repeat=repeat)
     dataloader = DatasetLoader(data, file_sampler=split_sampler, dataset_fn=dataset_fn, batch_sampler_fn=sampler_fn,
-                               dataset_params=dataset_params, batch_sampler_params=sampler_params,
-                               batchify_fn=batchify_fn, num_dataset_workers=num_workers, num_batch_workers=num_workers,
+                               dataset_params=dataset_params, batch_sampler_params=sampler_params, batchify_fn=batchify_fn,
+                               num_dataset_workers=num_dataset_workers, num_batch_workers=num_batch_workers,
                                pin_memory=True, circle_length=circle_length)
     return dataloader
 
 
-def get_pretrain_data_npz(data, batch_size, num_ctxes, shuffle, num_buckets,
-                          vocab, num_parts=1, part_idx=0, num_workers=1,
+def get_pretrain_data_npz(data, batch_size, num_ctxes,
+                          shuffle, num_buckets,
+                          vocab, num_parts=1, part_idx=0,
+                          num_dataset_workers=1, num_batch_workers=1,
                           circle_length=1, repeat=1):
     """Get a data iterator from pre-processed npz files.
 
@@ -231,8 +236,10 @@ def get_pretrain_data_npz(data, batch_size, num_ctxes, shuffle, num_buckets,
         The number of partitions for the dataset.
     part_idx : int
         The index of the partition to read.
-    num_workers : int
-        The number of worker processes for dataset contruction.
+    num_dataset_workers : int
+        The number of worker processes for dataset construction.
+    num_batch_workers : int
+        The number of worker processes for batch contruction.
     circle_length : int, default is 1
         The number of files to be read for a single worker at the same time. When circle_length is larger than 1,
         we merge circle_length files.
@@ -259,8 +266,8 @@ def get_pretrain_data_npz(data, batch_size, num_ctxes, shuffle, num_buckets,
                         Stack())
     split_sampler = nlp.data.SplitSampler(num_files, num_parts=num_parts, part_index=part_idx, repeat=repeat)
     dataloader = DatasetLoader(data, file_sampler=split_sampler, dataset_fn=dataset_fn, batch_sampler_fn=sampler_fn,
-                               dataset_params=dataset_params, batch_sampler_params=sampler_params,
-                               batchify_fn=batchify_fn, num_dataset_workers=num_workers, num_batch_workers=num_workers,
+                               dataset_params=dataset_params, batch_sampler_params=sampler_params, batchify_fn=batchify_fn,
+                               num_dataset_workers=num_dataset_workers, num_batch_workers=num_batch_workers,
                                pin_memory=True, circle_length=circle_length)
     return dataloader
 
