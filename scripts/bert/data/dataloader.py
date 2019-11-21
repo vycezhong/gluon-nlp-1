@@ -329,25 +329,28 @@ class DatasetLoader:
                  num_dataset_workers=0, num_batch_workers=0,
                  pin_memory=False, circle_length=1,
                  dataset_prefetch=None, batch_prefetch=None):
-        assert self._num_dataset_workers >= 0, \
+        assert num_dataset_workers >= 0, \
                'num_dataset_workers must be non-negative'
-        assert self._num_batch_workers >= 0, \
+        assert num_batch_workers >= 0, \
                'num_batch_workers must be non-negative'
-        if self._num_batch_workers > 0:
-            assert self._num_dataset_workers > 0, \
+        if num_batch_workers > 0:
+            assert num_dataset_workers > 0, \
                 'num_dataset_workers must be positive when num_batch_workers > 0'
         else:
-            if self._num_dataset_workers > 0:
+            if num_dataset_workers > 0:
                 warnings.warn('The multi-processing for both dataset and'
                               ' batch sampling is disabled when num_dataset_workers=0 though '
-                              'num_batch_workers={} > 0'.format(self._num_batch_workers))
+                              'num_batch_workers={} > 0'.format(num_batch_workers))
         assert self._circle_length >= 1, \
                'circle_length must be larger than or equal to 1'
         self._dataset = _PathDataset(file_patterns)
         self._file_sampler = file_sampler
-        dataset_fn = dataset_fn if dataset_fn is not None else prepare_pretrain_dataset
-        batch_sampler_fn \
-            = batch_sampler_fn if batch_sampler_fn is not None else prepare_pretrain_bucket_sampler
+        if dataset_fn is None:
+            dataset_fn = prepare_pretrain_text_dataset
+            logging.info('dataset_fn is not given. Set it to default function prepare_pretrain_text_dataset')
+        if batch_sampler_fn is None:
+            batch_sampler_fn = prepare_pretrain_bucket_sampler
+            logging.info('batch_sampler_fn is not given. Set it to default function prepare_pretrain_bucket_sampler')
         if dataset_params is not None:
             self._dataset_fn = partial(dataset_fn, **dataset_params)
         else:
@@ -356,8 +359,8 @@ class DatasetLoader:
             self._batch_sampler_fn = partial(batch_sampler_fn, **batch_sampler_params)
         else:
             self._batch_sampler_fn = batch_sampler_fn
-        self._num_dataset_workers = num_dataset_workers if num_dataset_workers >= 0 else 0
-        self._num_batch_workers = num_batch_workers if num_batch_workers >= 0 else 0
+        self._num_dataset_workers = num_dataset_workers
+        self._num_batch_workers = num_batch_workers
         self._dataset_prefetch \
             = max(0, int(dataset_prefetch) if dataset_prefetch is not None else self._num_dataset_workers)
         self._batch_prefetch \
