@@ -122,6 +122,7 @@ class _MultiBatchWorkerIter:
         self._pin_memory = pin_memory
         self._prefetch = prefetch
         self._dataset = None
+        self._batch_iter = None
 
     def _next_dataset(self):
         try:
@@ -132,7 +133,10 @@ class _MultiBatchWorkerIter:
 
     def _push_next(self):
         """Assign next batch workload to workers."""
-        r = next(self._batch_iter, None)
+        if self._batch_iter is not None:
+            r = next(self._batch_iter, None)
+        else:
+            r = None
         if r is None:
             result = self._next_dataset()
             if result is None:
