@@ -561,14 +561,14 @@ if __name__ == '__main__':
             if int(os.environ.get('NO_SHARD', False)):
                 logging.info("disabled sharding")
                 data_train = get_dataset_fn(args.data, batch_size,
-                                        len(ctxs), shuffle, args.num_buckets, vocab,
-                                        num_parts=1, part_idx=0,
-                                        num_workers=args.num_data_workers)
+                                            len(ctxs), shuffle, args.num_buckets, vocab,
+                                            num_parts=1, part_idx=0,
+                                            num_workers=args.num_data_workers)
             else:
                 data_train = get_dataset_fn(args.data, batch_size,
-                                        len(ctxs), shuffle, args.num_buckets, vocab,
-                                        num_parts=num_workers, part_idx=rank,
-                                        num_workers=args.num_data_workers)
+                                            len(ctxs), shuffle, args.num_buckets, vocab,
+                                            num_parts=num_workers, part_idx=rank,
+                                            num_workers=args.num_data_workers)
         train(data_train, data_eval, model)
     if data_eval:
         # eval data is always based on a fixed npz file.
