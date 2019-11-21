@@ -291,9 +291,9 @@ def train(data_train, data_eval, model):
         if int(os.environ.get('WINDOW_SIZE', False)):
             window_size = int(os.environ.get('WINDOW_SIZE', False))
             logging.info("using window size = {}".format(window_size))
-            loss_scale_param = {'scale_window': window_size, 'init_scale': 2**14}
+            loss_scale_param = {'scale_window': window_size, 'init_scale': 1}
         else:
-            loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 2**14}
+            loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 1}
     else:
         loss_scale_param = None
 
