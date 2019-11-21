@@ -117,11 +117,11 @@ class _MultiBatchWorkerIter:
         self._data_buffer = {}
         self._rcvd_idx = 0
         self._sent_idx = 0
-        self._dataset_iter = iter(self._dataset_iter)
-        self._dataset_iter = dataset_iter
+        self._dataset_iter = iter(dataset_iter)
         self._worker_fn = worker_fn
         self._pin_memory = pin_memory
         self._prefetch = prefetch
+        self._dataset = None
 
     def _next_dataset(self):
         try:
