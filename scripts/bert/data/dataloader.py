@@ -254,7 +254,7 @@ class _MultiDatasetWorkerIter:
 
 
 def _manager_register():
-
+    BaseManager.register('ArrayDataset', ArrayDataset)
 
 
 class DatasetLoader:
