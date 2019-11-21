@@ -21,7 +21,6 @@ import os
 import logging
 import random
 import multiprocessing
-import math
 import warnings
 
 import numpy as np
@@ -32,7 +31,7 @@ from mxnet.gluon.data import Sampler
 
 from gluonnlp.data.batchify import Tuple, Stack, Pad
 from data.dataloader import DatasetLoader, prepare_pretrain_text_dataset, prepare_pretrain_bucket_sampler
-from create_pretraining_data import create_training_instances
+from data.create_pretraining_data import create_training_instances
 
 
 __all__ = ['get_model_loss', 'get_pretrain_data_npz', 'get_dummy_dataloader',

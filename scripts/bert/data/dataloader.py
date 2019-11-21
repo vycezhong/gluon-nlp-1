@@ -34,7 +34,10 @@ from mxnet.gluon.data.dataloader import ForkingPickler, _as_in_context
 from mxnet.gluon.data.dataloader import default_mp_batchify_fn, default_batchify_fn
 from gluonnlp.data.stream import _PathDataset
 
-from ..create_pretraining_data import create_training_instances
+try:
+    from .create_pretraining_data import create_training_instances
+except ImportError:
+    from create_pretraining_data import create_training_instances
 
 
 def prepare_pretrain_npy_dataset(filename, allow_pickle=False):
