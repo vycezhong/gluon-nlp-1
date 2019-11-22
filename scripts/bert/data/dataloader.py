@@ -43,7 +43,7 @@ except ImportError:
 class ProxyArrayDataset(ArrayDataset):
     """When BaseManager is used, proxy[ArrayDataset] does not support index."""
     def __init__(self, *args):
-        super(ArrayDataset, self).__init__(*args)
+        super(ProxyArrayDataset, self).__init__(*args)
 
     def get(self, idx):
         return self.__getitem__(idx)
