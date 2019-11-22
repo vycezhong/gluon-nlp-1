@@ -40,6 +40,15 @@ except ImportError:
     from create_pretraining_data import create_training_instances
 
 
+class ProxyArrayDataset(ArrayDataset):
+    """When BaseManager is used, proxy[ArrayDataset] does not support index."""
+    def __init__(self, *args):
+        super(ArrayDataset, self).__init__(*args)
+
+    def get(self, idx):
+        return self.__getitem__(idx)
+
+
 def prepare_pretrain_npy_dataset(filename, allow_pickle=False):
     """Create dataset based on the files"""
     assert not isinstance(filename, (list, tuple)), \
@@ -100,9 +109,9 @@ def _batch_worker_fn(samples, batchify_fn, dataset=None):
     # it is required that each worker process has to fork a new MXIndexedRecordIO handle
     # preserving dataset as global variable can save tons of overhead and is safe in new process
     if isinstance(samples[0], (list, tuple)):
-        batch = [batchify_fn([dataset[i] for i in shard]) for shard in samples]
+        batch = [batchify_fn([dataset.get(i) for i in shard]) for shard in samples]
     else:
-        batch = batchify_fn([dataset[i] for i in samples])
+        batch = batchify_fn([dataset.get(i) for i in samples])
     buf = io.BytesIO()
     ForkingPickler(buf, pickle.HIGHEST_PROTOCOL).dump(batch)
     return buf.getvalue()
@@ -237,7 +246,7 @@ class _MultiDatasetWorkerIter:
         ret = self._data_buffer.pop(self._rcvd_idx)
         dataset, batch_sampler = ret.get()
         if self._manager:
-            dataset = self._manager.ArrayDataset(dataset)
+            dataset = self._manager.ProxyArrayDataset(dataset)
         self._rcvd_idx += 1
         return dataset, batch_sampler
 
@@ -261,7 +270,7 @@ class _MultiDatasetWorkerIter:
 
 
 def _manager_register():
-    BaseManager.register('ArrayDataset', ArrayDataset)
+    BaseManager.register('ProxyArrayDataset', ProxyArrayDataset)
 
 
 class DatasetLoader:
