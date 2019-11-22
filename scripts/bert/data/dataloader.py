@@ -246,7 +246,7 @@ class _MultiDatasetWorkerIter:
         ret = self._data_buffer.pop(self._rcvd_idx)
         dataset, batch_sampler = ret.get()
         if self._manager:
-            dataset = self._manager.ProxyArrayDataset(dataset)
+            dataset = self._manager.ProxyArrayDataset(*dataset)
         self._rcvd_idx += 1
         return dataset, batch_sampler
 
