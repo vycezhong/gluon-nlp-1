@@ -72,7 +72,7 @@ def prepare_pretrain_text_dataset(filename, tokenizer, max_seq_length, short_seq
                                            whole_word_mask, vocab,
                                            dupe_factor, num_workers,
                                            worker_pool, None))
-    return instances
+    return ArrayDataset(*instances)
 
 
 def prepare_pretrain_bucket_sampler(dataset, batch_size, shuffle=False,
@@ -246,7 +246,7 @@ class _MultiDatasetWorkerIter:
         ret = self._data_buffer.pop(self._rcvd_idx)
         dataset, batch_sampler = ret.get()
         if self._manager:
-            dataset = self._manager.ProxyArrayDataset(*dataset)
+            dataset = self._manager.ProxyArrayDataset(*dataset._data)
         self._rcvd_idx += 1
         return dataset, batch_sampler
 
