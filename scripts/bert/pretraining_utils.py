@@ -251,7 +251,7 @@ def get_pretrain_data_npz(data, batch_size, num_ctxes,
     assert num_files >= num_parts, \
         'The number of training text files must be no less than the number of ' \
         'workers/partitions (%d). Only %d files at %s are found.'%(num_parts, num_files, data)
-    dataset_params = {'allow_pickle' : True}
+    dataset_params = {'allow_pickle': True}
     sampler_params = {'batch_size': batch_size, 'shuffle': shuffle,
                       'num_ctxes': num_ctxes, 'num_buckets': num_buckets}
     dataset_fn = prepare_pretrain_text_dataset

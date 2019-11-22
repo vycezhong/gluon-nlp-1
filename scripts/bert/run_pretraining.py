@@ -132,8 +132,10 @@ parser.add_argument('--whole_word_mask', action='store_true',
 parser.add_argument('--sentencepiece', default=None, type=str,
                     help='Path to the sentencepiece .model file for both tokenization and vocab. '
                          'Effective only if --raw is set.')
-parser.add_argument('--num_data_workers', type=int, default=8,
-                    help='Number of workers to pre-process data.')
+parser.add_argument('--num_dataset_workers', type=int, default=4,
+                    help='Number of workers to pre-process dataset.')
+parser.add_argument('--num_batch_workers', type=int, default=4,
+                    help='Number of workers to pre-process mini-batch.')
 parser.add_argument('--circle_length', type=int, default=32,
                     help='Number of files to be read for a single GPU at the same time.')
 parser.add_argument('--repeat', type=int, default=8,
@@ -563,12 +565,14 @@ if __name__ == '__main__':
                 data_train = get_dataset_fn(args.data, batch_size,
                                             len(ctxs), shuffle, args.num_buckets, vocab,
                                             num_parts=1, part_idx=0,
-                                            num_workers=args.num_data_workers)
+                                            num_dataset_workers=args.num_dataset_workers,
+                                            num_batch_workers=args.num_batch_workers)
             else:
                 data_train = get_dataset_fn(args.data, batch_size,
                                             len(ctxs), shuffle, args.num_buckets, vocab,
                                             num_parts=num_workers, part_idx=rank,
-                                            num_workers=args.num_data_workers)
+                                            num_dataset_workers=args.num_dataset_workers,
+                                            num_batch_workers=args.num_batch_workers)
         train(data_train, data_eval, model)
     if data_eval:
         # eval data is always based on a fixed npz file.

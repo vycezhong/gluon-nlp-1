@@ -45,7 +45,7 @@ def prepare_pretrain_npy_dataset(filename, allow_pickle=False):
     assert not isinstance(filename, (list, tuple)), \
         'When .npy/.npz data file is loaded, filename must be a string.'
     logging.debug('start to load files %s ...', filename)
-    dataset = nlp.data.NumpyDataset(filename)
+    dataset = nlp.data.NumpyDataset(filename, allow_pickle=allow_pickle)
     return dataset
 
 
@@ -63,7 +63,7 @@ def prepare_pretrain_text_dataset(filename, tokenizer, max_seq_length, short_seq
                                            whole_word_mask, vocab,
                                            dupe_factor, num_workers,
                                            worker_pool, None))
-    return instances
+    return ArrayDataset(*instances)
 
 
 def prepare_pretrain_bucket_sampler(dataset, batch_size, shuffle=False,
