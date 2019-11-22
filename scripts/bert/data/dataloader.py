@@ -171,7 +171,7 @@ class _MultiBatchWorkerIter:
         assert self._rcvd_idx < self._sent_idx, 'rcvd_idx must be smaller than sent_idx'
         assert self._rcvd_idx in self._data_buffer, 'fatal error with _push_next, rcvd_idx missing'
         ret = self._data_buffer.pop(self._rcvd_idx)
-        batch = pickle.loads(ret.get()) if self._dataset is None else ret.get()
+        batch = pickle.loads(ret.get()) 
         if self._pin_memory:
             batch = _as_in_context(batch, context.cpu_pinned())
         self._rcvd_idx += 1
