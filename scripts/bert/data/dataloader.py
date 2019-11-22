@@ -72,7 +72,7 @@ def prepare_pretrain_text_dataset(filename, tokenizer, max_seq_length, short_seq
                                            whole_word_mask, vocab,
                                            dupe_factor, num_workers,
                                            worker_pool, None))
-    return ArrayDataset(*instances)
+    return instances
 
 
 def prepare_pretrain_bucket_sampler(dataset, batch_size, shuffle=False,
