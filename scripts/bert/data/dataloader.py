@@ -142,9 +142,9 @@ class _MultiBatchWorkerIter:
             if result is None:
                 return
             else:
-                dataset, batch_iter = result
+                dataset, batch_sampler = result
                 self._dataset = dataset
-                self._batch_iter = batch_iter
+                self._batch_iter = iter(batch_sampler)
                 for _ in range(self._prefetch):
                     self._push_next()
         else:
