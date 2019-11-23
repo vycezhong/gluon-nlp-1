@@ -54,8 +54,7 @@ def prepare_pretrain_npy_dataset(filename, allow_pickle=False):
     assert not isinstance(filename, (list, tuple)), \
         'When .npy/.npz data file is loaded, filename must be a string.'
     logging.debug('start to load files %s ...', filename)
-    dataset = nlp.data.NumpyDataset(filename, allow_pickle=allow_pickle)
-    return dataset
+    return nlp.data.NumpyDataset(filename, allow_pickle=allow_pickle)
 
 
 def prepare_pretrain_text_dataset(filename, tokenizer, max_seq_length, short_seq_prob,
@@ -171,7 +170,7 @@ class _MultiBatchWorkerIter:
         assert self._rcvd_idx < self._sent_idx, 'rcvd_idx must be smaller than sent_idx'
         assert self._rcvd_idx in self._data_buffer, 'fatal error with _push_next, rcvd_idx missing'
         ret = self._data_buffer.pop(self._rcvd_idx)
-        batch = pickle.loads(ret.get()) 
+        batch = pickle.loads(ret.get())
         if self._pin_memory:
             batch = _as_in_context(batch, context.cpu_pinned())
         self._rcvd_idx += 1
@@ -190,13 +189,19 @@ class _MultiDatasetWorkerIter:
                  dataset_fn, batch_sampler_fn,
                  worker_fn=_dataset_worker_fn,
                  prefetch=0, dataset=None, circle_length=1,
+                 cached=False, num_max_cached=0,
                  manager=None):
+        if cached:
+            assert num_max_cached > 0,\
+                'When cached is turned on, num_max_cached must be positive.'
         self._worker_pool = worker_pool
         self._dataset_fn = dataset_fn
         self._batch_sampler_fn = batch_sampler_fn
         self._worker_fn = worker_fn
         self._prefetch = prefetch
         self._circle_length = circle_length
+        self._cached = cached
+        self._num_max_cached = num_max_cached
 
         # manager for creating shared memory
         self._manager = manager
@@ -208,6 +213,9 @@ class _MultiDatasetWorkerIter:
 
         self._dataset = [dataset[i] for i in iter(file_sampler)]
         self._num_datasets = len(self._dataset)
+
+        # construct cached list
+        self._cached_dataset = []
 
         # pre-fetch
         for _ in range(self._prefetch):
@@ -243,11 +251,17 @@ class _MultiDatasetWorkerIter:
         assert self._rcvd_idx in self._data_buffer, \
                'fatal error with _next_dataset, rcvd_idx missing'
 
-        ret = self._data_buffer.pop(self._rcvd_idx)
-        dataset, batch_sampler = ret.get()
-        if self._manager:
-            dataset = self._manager.ProxyArrayDataset(*dataset._data)
-        self._rcvd_idx += 1
+        if len(self._cached_dataset) == 0 or self._data_buffer[self._rcvd_idx].ready():
+            ret = self._data_buffer.pop(self._rcvd_idx)
+            dataset, batch_sampler = ret.get()
+            if self._manager:
+                dataset = self._manager.ProxyArrayDataset(*dataset._data)
+            self._rcvd_idx += 1
+            if self._cached and len(self._cached_dataset) < self._num_max_cached:
+                self._cached_dataset.append((dataset, batch_sampler))
+        else:
+            dataset, batch_sampler = self._cached_dataset.pop(0)
+
         return dataset, batch_sampler
 
     def __next__(self):
@@ -335,13 +349,19 @@ class DatasetLoader:
         but will consume more shared_memory. Using smaller number may forfeit the purpose of using
         multiple worker processes, try reduce `num_batch_workers` in this case.
         By default it defaults to `num_batch_workers * 2`.
+    dataset_cached : bool, default is False
+        Whether or not to cache last processed dataset. Each processed dataset can only be cached for once.
+        When there is no new available processed dataset to be fetched, we pop a cached processed dataset.
+    num_max_dataset_cached : int, default is 0
+        Maximum number of cached datasets. It is valid only if dataset_cached is True
     """
     def __init__(self, file_patterns, file_sampler,
                  dataset_fn=None, batch_sampler_fn=None,
                  dataset_params=None, batch_sampler_params=None, batchify_fn=None,
                  num_dataset_workers=0, num_batch_workers=0,
                  pin_memory=False, circle_length=1,
-                 dataset_prefetch=None, batch_prefetch=None):
+                 dataset_prefetch=None, batch_prefetch=None,
+                 dataset_cached=False, num_max_dataset_cached=0):
         assert num_dataset_workers >= 0, \
                'num_dataset_workers must be non-negative'
         assert num_batch_workers >= 0, \
@@ -356,6 +376,9 @@ class DatasetLoader:
                               'num_dataset_workers={} > 0'.format(num_dataset_workers))
         assert circle_length >= 1, \
                'circle_length must be larger than or equal to 1'
+        if dataset_cached:
+            assert num_max_dataset_cached > 0, \
+                'When dataset_cached is True, num_max_dataset_cached must be positive'
         self._dataset = _PathDataset(file_patterns)
         self._file_sampler = file_sampler
         if dataset_fn is None:
@@ -380,6 +403,8 @@ class DatasetLoader:
             = max(0, int(batch_prefetch) if batch_prefetch is not None else 2 * self._num_batch_workers)
         self._pin_memory = pin_memory
         self._circle_length = circle_length
+        self._dataset_cached = dataset_cached
+        self._num_max_dataset_cached = num_max_dataset_cached
         self._manager = None
         self._dataset_worker_pool = None
         if self._num_dataset_workers > 0:
@@ -426,6 +451,8 @@ class DatasetLoader:
                                                batch_sampler_fn=self._batch_sampler_fn,
                                                prefetch=self._dataset_prefetch,
                                                circle_length=self._circle_length,
+                                               cached=self._dataset_cached,
+                                               num_max_cached=self._num_max_dataset_cached,
                                                manager=self._manager)
         return _MultiBatchWorkerIter(self._batch_worker_pool, self._batchify_fn, dataset_iter,
                                      pin_memory=self._pin_memory, worker_fn=_batch_worker_fn,
