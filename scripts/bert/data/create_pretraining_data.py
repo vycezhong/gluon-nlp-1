@@ -28,6 +28,7 @@ import numpy as np
 import gluonnlp as nlp
 from gluonnlp.data import BERTTokenizer
 
+random.seed(12345)
 
 class TrainingInstance:
     """A single training instance (sentence pair)."""
@@ -249,8 +250,10 @@ def create_training_instances(x):
                         all_documents[-1].append(line)
 
     # remove the last empty document if any
-    if not all_documents[-1]:
-        all_documents = all_documents[:-1]
+    #if not all_documents[-1]:
+    #    all_documents = all_documents[:-1]
+    all_documents = [x for x in all_documents if x]
+    random.shuffle(all_documents)
 
     # generate training instances
     instances = []
@@ -350,9 +353,14 @@ def create_instances_from_document(x):
                     target_b_length = target_seq_length - len(tokens_a)
 
                     # randomly choose a document other than itself
-                    random_document_index = random.randint(0, len(all_documents) - 2)
-                    if random_document_index >= document_index:
-                        random_document_index += 1
+#                    random_document_index = random.randint(0, len(all_documents) - 2)
+#                    if random_document_index >= document_index:
+#                        random_document_index += 1
+                    # pytorch implementation
+                    for _ in range(10):
+                        random_document_index = random.randint(0, len(all_documents) - 1)
+                        if random_document_index != document_index:
+                            break
 
                     random_document = all_documents[random_document_index]
                     random_start = random.randint(0, len(random_document) - 1)
