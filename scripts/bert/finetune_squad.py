@@ -373,13 +373,13 @@ def train():
     optimizer_params = {'learning_rate': lr, 'wd': args.wd}
     try:
         trainer = mx.gluon.Trainer(net.collect_params(), optimizer,
-                                   optimizer_params, update_on_kvstore=False)
+                                   optimizer_params, update_on_kvstore=True)
     except ValueError as e:
         print(e)
         warnings.warn('AdamW optimizer is not found. Please consider upgrading to '
                       'mxnet>=1.5.0. Now the original Adam optimizer is used instead.')
         trainer = mx.gluon.Trainer(net.collect_params(), 'adam',
-                                   optimizer_params, update_on_kvstore=False)
+                                   optimizer_params, update_on_kvstore=True)
 
     num_train_examples = len(train_data_transform)
     step_size = batch_size * accumulate if accumulate else batch_size
@@ -448,9 +448,10 @@ def train():
             losses = [parallel.get() for _ in range(len(inputs))]
             # update
             if not accumulate or (batch_id + 1) % accumulate == 0:
-                trainer.allreduce_grads()
-                nlp.utils.clip_grad_global_norm(params, 1)
-                trainer.update(1, ignore_stale_grad=True)
+                #trainer.allreduce_grads()
+                #nlp.utils.clip_grad_global_norm(params, 1)
+                #trainer.update(1, ignore_stale_grad=True)
+                trainer.step(1, ignore_stale_grad=True)
 
             step_loss += sum([ls.asscalar() for ls in losses])
 

@@ -210,9 +210,7 @@ class LAMB2(Optimizer):
 
         with bulk(self._bulk):
             # preprocess grad
-            #import logging
             grad *= self.rescale_grad
-            #logging.info(name, grad.norm(ord=2).asscalar())
             if not att or not self._split_head:
                 grad /= grad.norm(ord=2)
             else: 

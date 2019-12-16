@@ -140,6 +140,10 @@ parser.add_argument('--circle_length', type=int, default=32,
                     help='Number of files to be read for a single GPU at the same time.')
 parser.add_argument('--repeat', type=int, default=8,
                     help='Number of times that files are repeated in each shuffle.')
+parser.add_argument('--dataset_cached', action='store_true',
+                    help='Whether or not to cache the last processed training dataset.')
+parser.add_argument('--num_max_dataset_cached', type=int, default=0,
+                    help='Maximum number of cached processed training dataset.')
 # communication
 parser.add_argument('--comm_backend', type=str, default='device',
                     choices=['horovod', 'dist_sync_device', 'device', 'byteps'],
@@ -180,7 +184,6 @@ class DataParallelBERT(nlp.utils.Parallelizable):
                               next_sentence_label, segment_id, valid_length)
             classified, decoded, ls1, ls2, num_masks = out
             ls = ls1 + ls2
-            #ls = ls / args.accumulate
         if self._trainer:
             self._trainer.backward(ls)
         else:
@@ -293,9 +296,9 @@ def train(data_train, data_eval, model):
         if int(os.environ.get('WINDOW_SIZE', False)):
             window_size = int(os.environ.get('WINDOW_SIZE', False))
             logging.info("using window size = {}".format(window_size))
-            loss_scale_param = {'scale_window': window_size, 'init_scale': 2**14}
+            loss_scale_param = {'scale_window': window_size, 'init_scale': 2**8}
         else:
-            loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 2**14}
+            loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 2**8}
     else:
         loss_scale_param = None
 
@@ -372,6 +375,7 @@ def train(data_train, data_eval, model):
         trainer._init_params()
 
     logging.info('Generating the first batch of data, which may take a few minutes ...')
+
     while step_num < num_train_steps:
 
         data_train_iter = iter(data_train)
@@ -398,39 +402,35 @@ def train(data_train, data_eval, model):
 
             # load data
             data_list = list(split_and_load(data_batch, ctxs))
-
+   
             ns_label_list, ns_pred_list = [], []
             mask_label_list, mask_pred_list, mask_weight_list = [], [], []
 
-            with mx.autograd.record():
-                num_data = len(data_list)
-                for i in range(num_data):
-                    parallel.put(data_list[i])
-                for _ in range(num_data):
-                    (next_sentence_label, classified, masked_id,
-                     decoded, masked_weight, ls1, ls2, valid_length, num_masks) = parallel.get()
-                    ns_label_list.append(next_sentence_label)
-                    ns_pred_list.append(classified)
-                    mask_label_list.append(masked_id)
-                    mask_pred_list.append(decoded)
-                    mask_weight_list.append(masked_weight)
-                    local_num_masks += num_masks
-                    local_mlm_loss += ls1
-                    local_nsp_loss += ls2
-                    running_num_tks += valid_length.sum()
+            num_data = len(data_list)
+            for i in range(num_data):
+                parallel.put(data_list[i])
+            for _ in range(num_data):
+                (next_sentence_label, classified, masked_id,
+                 decoded, masked_weight, ls1, ls2, valid_length, num_masks) = parallel.get()
+                masked_id = masked_id.reshape(-1)
+                valid_length = valid_length.astype('float32', copy=False)
+                ns_label_list.append(next_sentence_label)
+                ns_pred_list.append(classified)
+                mask_label_list.append(masked_id)
+                mask_pred_list.append(decoded)
+                mask_weight_list.append(masked_weight)
+                local_num_masks += num_masks
+                local_mlm_loss += ls1
+                local_nsp_loss += ls2
+                running_num_tks += valid_length.sum()
             # pre fetch next batch
             try:
                 next_data_batch = next(data_train_iter)
             except StopIteration:
                 end_of_batch = True
 
-            #if acc_grad_dict == None:
-            #    acc_grad_dict = {k: [mx.nd.zeros_like(v.grad(context)) for context in ctxs] for k, v in model.collect_params().items() if v.grad_req != 'null'}
-            #else:
-            #    grad_fn(model, acc_grad_dict, ctxs, req='add')
             # update
             if (batch_num + 1) % accumulate == 0:
-                #grad_fn(model, acc_grad_dict, ctxs, req='assign')
                 if backend == 'horovod':
                     hvd.allreduce_(local_mlm_loss, average=False, name='local_mlm_loss')
                     hvd.allreduce_(local_nsp_loss, average=False, name='local_nsp_loss')
@@ -444,18 +444,15 @@ def train(data_train, data_eval, model):
                                          name="local_num_masks", priority=0)
                 else:
                     raise ValueError
-                #running_mlm_loss += local_mlm_loss / args.accumulate / num_workers
-                running_mlm_loss += local_mlm_loss / local_num_masks
+                running_mlm_loss += local_mlm_loss / args.accumulate / num_workers
                 running_nsp_loss += local_nsp_loss / args.accumulate / num_workers
                 # because byteps and horovod implicitly set scale /= num_workers
-                fp16_trainer.step(local_num_masks / num_workers, max_norm=local_num_masks,
+                fp16_trainer.step(args.accumulate, max_norm=num_workers * args.accumulate,
                                   num_ctxs=len(ctxs) * num_workers)
-                #fp16_trainer.step(args.accumulate, max_norm=args.accumulate * num_workers,
-                #                  num_ctxs=len(ctxs) * num_workers)
                 local_num_masks, local_mlm_loss, local_nsp_loss = 0, 0, 0
                 if accumulate > 1:
                     param_dict.zero_grad()
-                #grad_fn(model, acc_grad_dict, ctxs, req='zero')
+
             # update metrics
             if args.no_compute_acc:
                 for mask_pred_i in mask_pred_list:
@@ -465,7 +462,7 @@ def train(data_train, data_eval, model):
                 mlm_metric.update(mask_label_list, mask_pred_list, mask_weight_list)
 
             # logging
-            if (step_num + 1) % (args.log_interval) == 0 and (batch_num + 1) % accumulate == 0:
+            if step_num % (args.log_interval) == 0 and (batch_num + 1) % accumulate == 0:
                 if args.no_compute_acc:
                     log_noacc(begin_time, running_num_tks, running_mlm_loss,
                               0, step_num, trainer, args.log_interval)
@@ -479,12 +476,12 @@ def train(data_train, data_eval, model):
                 running_mlm_loss = running_nsp_loss = running_num_tks = 0
 
             # saving checkpoints
-            if (step_num + 1) % args.ckpt_interval == 0 and (batch_num + 1) % accumulate == 0:
+            if step_num % args.ckpt_interval == 0 and (batch_num + 1) % accumulate == 0:
                 if is_master_node:
                     save_states(step_num, trainer, args.ckpt_dir, local_rank)
                     if local_rank == 0:
                         save_parameters(step_num, model.bert, args.ckpt_dir)
-            if (step_num + 1) % args.eval_interval == 0 and data_eval and (batch_num + 1) % accumulate == 0:
+            if step_num  % args.eval_interval == 0 and data_eval and (batch_num + 1) % accumulate == 0:
                 # eval data is always based on a fixed npz file.
                 dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
                                                      1, False, 1, vocab)
@@ -528,15 +525,14 @@ if __name__ == '__main__':
             tokenizer = nlp.data.BERTTokenizer(vocab=vocab, lower=not args.cased)
 
         cache_dir = os.path.join(args.ckpt_dir, 'data_eval_cache')
-        cache_file = os.path.join(cache_dir, 'part-000.npz')
+        cache_file = os.path.join(cache_dir, 'part-0.npz')
         nlp.utils.mkdir(cache_dir)
 
         # generate dev dataset from the raw text if needed
-        if not args.eval_use_npz:
-            data_eval = cache_file
-            if not os.path.isfile(cache_file) and local_rank == 0:
-                if is_master_node or args.local_fs:
-                    generate_dev_set(tokenizer, vocab, cache_file, args)
+        data_eval = cache_file
+        if len(nlp.utils.glob(cache_file)) == 0 and local_rank == 0:
+            if is_master_node or args.local_fs:
+                generate_dev_set(tokenizer, vocab, cache_file, args)
 
     logging.info('Random seed set to %d', random_seed)
     mx.random.seed(random_seed)
@@ -551,8 +547,11 @@ if __name__ == '__main__':
                                                whole_word_mask=args.whole_word_mask,
                                                tokenizer=tokenizer,
                                                circle_length=args.circle_length,
-                                               repeat=args.repeat)
+                                               repeat=args.repeat,
+                                               dataset_cached=args.dataset_cached,
+                                               num_max_dataset_cached=args.num_max_dataset_cached)
         else:
+            logging.info('get npz dataset fn')
             get_dataset_fn = get_pretrain_data_npz
 
         if args.synthetic_data:
@@ -568,25 +567,18 @@ if __name__ == '__main__':
                                             num_dataset_workers=args.num_dataset_workers,
                                             num_batch_workers=args.num_batch_workers)
             else:
+                logging.info('enable sharding')
+                logging.info('args.num_buckets: {}, num_workers: {}, rank: {}'.format(args.num_buckets, num_workers, rank))
                 data_train = get_dataset_fn(args.data, batch_size,
                                             len(ctxs), shuffle, args.num_buckets, vocab,
                                             num_parts=num_workers, part_idx=rank,
                                             num_dataset_workers=args.num_dataset_workers,
                                             num_batch_workers=args.num_batch_workers)
         train(data_train, data_eval, model)
-    if data_eval:
+    if data_eval and ((is_master_node or args.local_fs) and local_rank == 0):
         # eval data is always based on a fixed npz file.
         shuffle = False
         dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
                                              len(ctxs), shuffle, 1, vocab)
-        #param_path = os.path.join(args.ckpt_dir, '%07d.params'%args.num_steps)
-        #nlp.utils.load_parameters(model.bert, param_path, ctx=ctxs, cast_dtype=True)
-        #logging.info('Loading step %d checkpoints from %s.', args.num_steps, param_path)
         evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, local_rank, 8)
-    #if backend == 'horovod':
-    #    hvd.allreduce_(sync_point, average=False, name='sync_point')
-    #elif backend == 'byteps':
-    #    bps.byteps_push_pull(sync_point, is_average=False,
-    #                         name="sync_point", priority=0)
-    #sync_point.wait_to_read()
     logging.info("Done")

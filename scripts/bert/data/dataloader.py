@@ -61,7 +61,7 @@ def prepare_pretrain_text_dataset(filename, tokenizer, max_seq_length, short_seq
                                   masked_lm_prob, max_predictions_per_seq, whole_word_mask,
                                   vocab, num_workers=1, worker_pool=None):
     """Create dataset based on the files"""
-    dupe_factor = 5
+    dupe_factor = 1
     if not isinstance(filename, (list, tuple)):
         filename = [filename]
     logging.debug('start to load files %s ...', filename)

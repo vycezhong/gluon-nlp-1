@@ -30,7 +30,7 @@ import gluonnlp as nlp
 from mxnet.gluon.data import Sampler
 
 from gluonnlp.data.batchify import Tuple, Stack, Pad
-from data.dataloader import DatasetLoader, prepare_pretrain_text_dataset, prepare_pretrain_bucket_sampler
+from data.dataloader import DatasetLoader, prepare_pretrain_text_dataset, prepare_pretrain_npy_dataset, prepare_pretrain_bucket_sampler
 from data.create_pretraining_data import create_training_instances
 
 
@@ -143,7 +143,8 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
                            num_buckets, vocab, tokenizer, max_seq_length, short_seq_prob,
                            masked_lm_prob, max_predictions_per_seq, whole_word_mask,
                            num_parts=1, part_idx=0, num_dataset_workers=1, num_batch_workers=1,
-                           circle_length=1, repeat=1):
+                           circle_length=1, repeat=1,
+                           dataset_cached=False, num_max_dataset_cached=0):
     """Get a data iterator from raw text documents.
 
     Parameters
@@ -183,11 +184,16 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
         we merge circle_length files.
     repeat : int, default is 1
         The number of times that files are repeated.
+    dataset_cached : bool, default is False
+        Whether or not to cache last processed dataset. Each processed dataset can only be cached for once.
+        When there is no new available processed dataset to be fetched, we pop a cached processed dataset.
+    num_max_dataset_cached : int, default is 0
+        Maximum number of cached datasets. It is valid only if dataset_cached is True
     """
     num_files = len(nlp.utils.glob(data))
     logging.info('%d files are found.', num_files)
     assert num_files >= num_parts, \
-        'The number of training text files must be no less than the number of ' \
+        'The number of text files must be no less than the number of ' \
         'workers/partitions (%d). Only %d files at %s are found.'%(num_parts, num_files, data)
     dataset_params = {'tokenizer': tokenizer, 'max_seq_length': max_seq_length,
                       'short_seq_prob': short_seq_prob, 'masked_lm_prob': masked_lm_prob,
@@ -209,7 +215,8 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
     dataloader = DatasetLoader(data, file_sampler=split_sampler, dataset_fn=dataset_fn, batch_sampler_fn=sampler_fn,
                                dataset_params=dataset_params, batch_sampler_params=sampler_params, batchify_fn=batchify_fn,
                                num_dataset_workers=num_dataset_workers, num_batch_workers=num_batch_workers,
-                               pin_memory=True, circle_length=circle_length)
+                               pin_memory=True, circle_length=circle_length,
+                               dataset_cached=dataset_cached, num_max_dataset_cached=num_max_dataset_cached)
     return dataloader
 
 
@@ -217,7 +224,8 @@ def get_pretrain_data_npz(data, batch_size, num_ctxes,
                           shuffle, num_buckets,
                           vocab, num_parts=1, part_idx=0,
                           num_dataset_workers=1, num_batch_workers=1,
-                          circle_length=1, repeat=1):
+                          circle_length=1, repeat=1,
+                          dataset_cached=False, num_max_dataset_cached=0):
     """Get a data iterator from pre-processed npz files.
 
     Parameters
@@ -245,16 +253,21 @@ def get_pretrain_data_npz(data, batch_size, num_ctxes,
         we merge circle_length files.
     repeat : int, default is 1
         The number of times that files are repeated.
+    dataset_cached : bool, default is False
+        Whether or not to cache last processed dataset. Each processed dataset can only be cached for once.
+        When there is no new available processed dataset to be fetched, we pop a cached processed dataset.
+    num_max_dataset_cached : int, default is 0
+        Maximum number of cached datasets. It is valid only if dataset_cached is True
     """
     num_files = len(nlp.utils.glob(data))
     logging.info('%d files are found.', num_files)
     assert num_files >= num_parts, \
-        'The number of training text files must be no less than the number of ' \
+        'The number of text files must be no less than the number of ' \
         'workers/partitions (%d). Only %d files at %s are found.'%(num_parts, num_files, data)
     dataset_params = {'allow_pickle': True}
     sampler_params = {'batch_size': batch_size, 'shuffle': shuffle,
                       'num_ctxes': num_ctxes, 'num_buckets': num_buckets}
-    dataset_fn = prepare_pretrain_text_dataset
+    dataset_fn = prepare_pretrain_npy_dataset
     sampler_fn = prepare_pretrain_bucket_sampler
     pad_val = vocab[vocab.padding_token]
     batchify_fn = Tuple(Pad(pad_val=pad_val, round_to=8),  # input_id
@@ -268,7 +281,8 @@ def get_pretrain_data_npz(data, batch_size, num_ctxes,
     dataloader = DatasetLoader(data, file_sampler=split_sampler, dataset_fn=dataset_fn, batch_sampler_fn=sampler_fn,
                                dataset_params=dataset_params, batch_sampler_params=sampler_params, batchify_fn=batchify_fn,
                                num_dataset_workers=num_dataset_workers, num_batch_workers=num_batch_workers,
-                               pin_memory=True, circle_length=circle_length)
+                               pin_memory=True, circle_length=circle_length,
+                               dataset_cached=dataset_cached, num_max_dataset_cached=num_max_dataset_cached)
     return dataloader
 
 
@@ -375,8 +389,7 @@ class BERTForPretrain(mx.gluon.Block):
         ls1 = self.mlm_loss(decoded.astype('float32', copy=False),
                             masked_id, masked_weight.reshape((-1, 1)))
         ls2 = self.nsp_loss(classified.astype('float32', copy=False), next_sentence_label)
-        ls1 = ls1.sum()
-        #ls1 = ls1.mean()
+        ls1 = ls1.sum() / (num_masks + 1e-10)
         ls2 = ls2.mean()
         return classified, decoded, ls1, ls2, num_masks
 
@@ -395,8 +408,6 @@ def evaluate(data_eval, model, ctx, log_interval, dtype, rank, num_workers):
     total_mlm_loss = total_nsp_loss = 0
     running_num_tks = 0
     for idx, data_batch in enumerate(data_eval):
-        if idx % num_workers != rank:
-            continue
         step_num += 1
 
         data_list = split_and_load(data_batch, ctx)
@@ -417,8 +428,7 @@ def evaluate(data_eval, model, ctx, log_interval, dtype, rank, num_workers):
             mask_weight_list.append(masked_weight)
 
             valid_length = valid_length.astype('float32', copy=False)
-            running_mlm_loss += (ls1 / num_masks).as_in_context(mx.cpu())
-            #running_mlm_loss += ls1.as_in_context(mx.cpu())
+            running_mlm_loss += ls1.as_in_context(mx.cpu())
             running_nsp_loss += ls2.as_in_context(mx.cpu())
             running_num_tks += valid_length.sum().as_in_context(mx.cpu())
         nsp_metric.update(ns_label_list, ns_pred_list)
@@ -466,7 +476,7 @@ def generate_dev_set(tokenizer, vocab, cache_file, args):
                                args.short_seq_prob, args.masked_lm_prob,
                                args.max_predictions_per_seq,
                                args.whole_word_mask, vocab,
-                               1, args.num_data_workers,
+                               1, args.num_dataset_workers,
                                worker_pool, cache_file))
     logging.info('Done generating validation set on rank 0.')
 

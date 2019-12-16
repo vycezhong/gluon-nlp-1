@@ -1,27 +1,71 @@
 pkill python
-mpirun --allow-run-as-root --tag-output -np 256 --hostfile $HOME/hosts_np256 \
-        -map-by ppr:4:socket -mca pml ob1 -mca btl ^openib  -mca btl_tcp_if_include eth0 \
-        -x NCCL_SOCKET_IFNAME=eth0 \
-        -x FI_PROVIDER="efa" -x FI_EFA_TX_MIN_CREDITS=64 \
-        -x NCCL_DEBUG=INFO -x NCCL_MIN_NRINGS=1 \
-        -x HOROVOD_FUSION_THRESHOLD=268435456 \
-        -x HOROVOD_HIERARCHICAL_ALLREDUCE=0 \
-        -x HOROVOD_CYCLE_TIME=30 \
-        -x NCCL_TREE_THRESHOLD=0 \
+
+DTYPE=float16
+MODEL=bert_24_1024_16
+
+#BS=32768
+#ACC=128
+#LR=0.004
+#WARMUP_RATIO=0.128
+#NUMSTEPS=1563
+
+BS=65536
+ACC=16
+LR=0.006
+WARMUP_RATIO=0.2843
+NUMSTEPS=7038
+OPTIMIZER=lamb2
+
+MAX_SEQ_LENGTH=128
+MAX_PREDICTIONS_PER_SEQ=20
+SHORT_SEQ_PROB=0.1
+
+LOGINTERVAL=10
+CKPTDIR="/home/ubuntu/efs/gluon-nlp-cus/ckpt_stage1_lamb_64k_hvd_sz"
+CKPTINTERVAL=300000000
+
+export TRUNCATE_NORM="${TRUNCATE_NORM:-1}"
+export LAMB_BULK="${LAMB_BULK:-30}"
+export EPS_AFTER_SQRT="${EPS_AFTER_SQRT:-1}"
+
+DATA_HOME=/home/ubuntu/mxnet-data/bert-pretraining/datasets/book-wiki-split-2k-v3
+DATA=$DATA_HOME/*.train
+DATAEVAL=$DATA_HOME/*.dev
+
+mkdir -p $CKPTDIR
+
+mpirun --allow-run-as-root --tag-output -np 64 --hostfile worker_8 \
+        -map-by ppr:4:socket -mca pml ob1 -mca btl ^openib \
+        -x NCCL_SOCKET_IFNAME=^lo,docker0 -mca btl_tcp_if_exclude lo,docker0 --bind-to none \
+        --mca plm_rsh_agent 'ssh -q -o StrictHostKeyChecking=no' \
+        -x NCCL_DEBUG=INFO -x NCCL_MIN_NRINGS=8 \
+        -x HOROVOD_HIERARCHICAL_ALLREDUCE=1 \
+        -x HOROVOD_CYCLE_TIME=1 \
         -x EPS_AFTER_SQRT=1 -x LAMB_BULK=30 \
         -x MXNET_SAFE_ACCUMULATION=1 \
         -x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=120 \
-        python run_pretraining.py --comm_backend horovod \
-                --model='bert_24_1024_16' \
-                --data='/home/ec2-user/mxnet-data/bert-pretraining/datasets/book-corpus/book-corpus-large-split/*.train,/home/ec2-user/mxnet-data/bert-pretraining/datasets/enwiki/enwiki-feb-doc-split/*.train' \
-                --data_eval='/home/ec2-user/mxnet-data/bert-pretraining/datasets/book-corpus/book-corpus-large-split/*.dev,/home/ec2-user/mxnet-data/bert-pretraining/datasets/enwiki/enwiki-feb-doc-split/*.dev' \
-                --num_steps 14063 --max_seq_length 128 --lr 0.005 --warmup_ratio 0.2 \
-                --total_batch_size 32768 --no_compute_acc  --max_predictions_per_seq 20 \
-                --total_batch_size_eval 32768 \
-                --optimizer lamb2 \
-                --ckpt_interval 99999999 \
-                --raw --log_interval 50 --accumulate 2 \
-                --ckpt_dir ./32K_np256_ckpt_dir_lamb2_eps_rescale_numworker 2>&1 | tee -a 32K_np256_ckpt_dir_lamb2_eps_rescale_numworker.log
-
-        #-x HOROVOD_TIMELINE=timeline_tree.json \
-                #--synthetic_data --eval_use_npz \
+        -x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_BWD=120 \
+        python3 -u run_pretraining.py \
+            --data=$DATA \
+            --data_eval=$DATAEVAL \
+            --optimizer $OPTIMIZER \
+            --warmup_ratio $WARMUP_RATIO \
+            --num_steps $NUMSTEPS \
+            --ckpt_interval $CKPTINTERVAL \
+            --dtype $DTYPE \
+            --ckpt_dir $CKPTDIR \
+            --lr $LR \
+            --total_batch_size $BS \
+            --total_batch_size_eval $BS \
+            --accumulate $ACC \
+            --model $MODEL \
+            --max_seq_length $MAX_SEQ_LENGTH \
+            --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
+            --num_dataset_workers 8 \
+            --num_batch_workers 2 \
+            --circle_length 4 \
+            --repeat 8092 \
+            --dataset_cached \
+            --num_max_dataset_cached 8 \
+            --short_seq_prob $SHORT_SEQ_PROB \
+            --comm_backend horovod --log_interval $LOGINTERVAL --raw
