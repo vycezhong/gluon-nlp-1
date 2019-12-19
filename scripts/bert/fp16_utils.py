@@ -444,7 +444,7 @@ class FP16Trainer:
         if max_norm is not None:
             _, ratio, is_finite = grad_global_norm(self.fp32_trainer._params,
                                                    max_norm * self._scaler.loss_scale)
-            #step_size = ratio * step_size
+            step_size = ratio * step_size
             if self._support_nan_check:
                 self.fp32_trainer.update(step_size)
                 overflow = is_finite.asscalar() < 1

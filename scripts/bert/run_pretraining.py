@@ -184,6 +184,7 @@ class DataParallelBERT(nlp.utils.Parallelizable):
                               next_sentence_label, segment_id, valid_length)
             classified, decoded, ls1, ls2, num_masks = out
             ls = ls1 + ls2
+            ls = ls / args.accumulate
         if self._trainer:
             self._trainer.backward(ls)
         else:
@@ -287,8 +288,14 @@ def train(data_train, data_eval, model):
     if 'lamb' in args.optimizer:
         optim_params['bias_correction'] = True
 
+
+    param_list = []
+    param_key = sorted(list(param_dict.keys()))
+    for key in param_key:
+        param_list.append(param_dict[key])
+
     param_idx2name = {}
-    param_idx2name.update(enumerate(model.collect_params().keys()))
+    param_idx2name.update(enumerate(param_key))
     optim_params['param_idx2name'] = param_idx2name
 
     dynamic_loss_scale = args.dtype == 'float16'
@@ -296,9 +303,9 @@ def train(data_train, data_eval, model):
         if int(os.environ.get('WINDOW_SIZE', False)):
             window_size = int(os.environ.get('WINDOW_SIZE', False))
             logging.info("using window size = {}".format(window_size))
-            loss_scale_param = {'scale_window': window_size, 'init_scale': 2**8}
+            loss_scale_param = {'scale_window': window_size, 'init_scale': 2**4}
         else:
-            loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 2**8}
+            loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 2**4}
     else:
         loss_scale_param = None
 
@@ -306,7 +313,7 @@ def train(data_train, data_eval, model):
     if backend == 'horovod':
         trainer = hvd.DistributedTrainer(param_dict, args.optimizer, optim_params)
     elif backend == 'byteps':
-        trainer = bps.DistributedTrainer(param_dict, args.optimizer, optim_params)
+        trainer = bps.DistributedTrainer(param_list, args.optimizer, optim_params)
     else:
         trainer = mx.gluon.Trainer(param_dict, args.optimizer, optim_params,
                                    update_on_kvstore=False)
@@ -349,7 +356,6 @@ def train(data_train, data_eval, model):
     parallel_model = DataParallelBERT(model, trainer=fp16_trainer)
     num_ctxes = len(ctxs)
     parallel = nlp.utils.Parallel(num_ctxes if num_ctxes > 1 else 0, parallel_model)
-    #acc_grad_dict = None
 
     sync_point = mx.nd.ones((1), ctx=mx.gpu(local_rank))
     if backend == 'byteps':
@@ -447,7 +453,7 @@ def train(data_train, data_eval, model):
                 running_mlm_loss += local_mlm_loss / args.accumulate / num_workers
                 running_nsp_loss += local_nsp_loss / args.accumulate / num_workers
                 # because byteps and horovod implicitly set scale /= num_workers
-                fp16_trainer.step(args.accumulate, max_norm=num_workers * args.accumulate,
+                fp16_trainer.step(1, max_norm=num_workers,
                                   num_ctxs=len(ctxs) * num_workers)
                 local_num_masks, local_mlm_loss, local_nsp_loss = 0, 0, 0
                 if accumulate > 1:

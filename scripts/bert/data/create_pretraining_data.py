@@ -249,9 +249,7 @@ def create_training_instances(x):
                     else:
                         all_documents[-1].append(line)
 
-    # remove the last empty document if any
-    #if not all_documents[-1]:
-    #    all_documents = all_documents[:-1]
+    # remove the empty document if any
     all_documents = [x for x in all_documents if x]
     random.shuffle(all_documents)
 

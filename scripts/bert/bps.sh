@@ -4,7 +4,7 @@ export TRUNCATE_NORM="${TRUNCATE_NORM:-1}"
 export LAMB_BULK="${LAMB_BULK:-30}"
 export EPS_AFTER_SQRT="${EPS_AFTER_SQRT:-1}"
 export NUMSTEPS="${NUMSTEPS:-900000}"
-export DTYPE="${DTYPE:-float16}"
+export DTYPE="${DTYPE:-float32}"
 export BS="${BS:-512}"
 export ACC="${ACC:-1}"
 export MODEL="${MODEL:-bert_24_1024_16}"
@@ -27,11 +27,13 @@ export NCCL_MIN_NRINGS="${NCCL_MIN_NRINGS:-16}"
 export MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD="${MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD:-120}"
 export MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_BWD="${MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_BWD:-120}"
 export MXNET_SAFE_ACCUMULATION="${MXNET_SAFE_ACCUMULATION:-1}"
-export OPTIONS="${OPTIONS:---synthetic --use_eval_npz}"
 #export DATA="${DATA:-/data/book-corpus/book-corpus-large-split/*.train,/data/enwiki/enwiki-feb-doc-split/*.train}"
 #export DATAEVAL="${DATAEVAL:-/data/book-corpus/book-corpus-large-split/*.test,/data/enwiki/enwiki-feb-doc-split/*.test}"
 export DATA="${DATA:-/data/book-wiki-split-2k-v3/*.train}"
 export DATAEVAL="${DATAEVAL:-/data/book-wiki-split-2k-v3/*.dev}"
+#export DATA="${DATA:-/data/book-wiki-split-pytorch_npz/*.npz}"
+#export DATAEVAL="${DATAEVAL:-/data/book-wiki-split-pytorch/*test*}"
+
 
 echo $NVIDIA_VISIBLE_DEVICES
 mkdir -p $CKPTDIR
@@ -57,9 +59,13 @@ python3 -u $BPS_HOME/launcher/launch.py \
 	    --model $MODEL \
 	    --max_seq_length $MAX_SEQ_LENGTH \
 	    --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
-	    --num_data_workers 8 \
-	    --circle_length 8 \
-            --repeat 16 \
+	    --num_dataset_workers 8 \
+            --num_batch_workers 2 \
+	    --circle_length 4 \
+            --repeat 8092 \
+            --dataset_cached \
+            --num_max_dataset_cached 8 \
+            --short_seq_prob 0.1 \
             --start_step 7038 \
             --phase2 \
             --phase1_num_steps 7038 \
