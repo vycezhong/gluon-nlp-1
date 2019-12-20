@@ -191,6 +191,13 @@ class LAMB2(Optimizer):
                 zeros(shape, weight.context, dtype=weight.dtype,
                       stype=stype))  # variance
 
+    def _norm(self, array):
+        # TODO(haibin) norm operator does not support fp16 safe reduction.
+        # Issue is tracked at: https://github.com/apache/incubator-mxnet/issues/14126
+        x = array.reshape((-1,)).astype('float32', copy=False)
+        return nd.dot(x, x)
+
+
     def update(self, index, weight, grad, state):
         if self._verbose:
             import logging
@@ -439,12 +446,16 @@ class FP16Trainer:
             max value for global 2-norm of gradients.
         """
         if num_ctxs and num_ctxs > 1:
-            self.fp32_trainer.allreduce_grads()
+            for param in sorted(self.fp32_trainer._params, key=lambda p: p.name):
+                if param.grad_req != 'null':
+                    for grad in param.list_grad():
+                        grad /= num_ctxs
+        self.fp32_trainer.allreduce_grads()
         step_size = batch_size * self._scaler.loss_scale
         if max_norm is not None:
             _, ratio, is_finite = grad_global_norm(self.fp32_trainer._params,
                                                    max_norm * self._scaler.loss_scale)
-            step_size = ratio * step_size
+            #step_size = ratio * step_size
             if self._support_nan_check:
                 self.fp32_trainer.update(step_size)
                 overflow = is_finite.asscalar() < 1
@@ -509,7 +520,7 @@ class DynamicLossScaler(LossScaler):
     by 2x. On the other hand, if a NaN is not detected for a long time
     (e.g. 2000 steps), then the scale is increased (by default) by 2x."""
     def __init__(self, init_scale=2.**15, scale_factor=2., scale_window=2000,
-                 tolerance=0.01):
+                 tolerance=0.):
         self.loss_scale = init_scale
         self.scale_factor = scale_factor
         self.scale_window = scale_window
