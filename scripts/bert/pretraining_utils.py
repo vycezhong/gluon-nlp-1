@@ -408,6 +408,8 @@ def evaluate(data_eval, model, ctx, log_interval, dtype, rank, num_workers):
     total_mlm_loss = total_nsp_loss = 0
     running_num_tks = 0
     for idx, data_batch in enumerate(data_eval):
+        if idx % num_workers != rank:
+            continue
         step_num += 1
 
         data_list = split_and_load(data_batch, ctx)

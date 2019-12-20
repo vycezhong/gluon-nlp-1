@@ -184,7 +184,7 @@ class DataParallelBERT(nlp.utils.Parallelizable):
                               next_sentence_label, segment_id, valid_length)
             classified, decoded, ls1, ls2, num_masks = out
             ls = ls1 + ls2
-            ls = ls / args.accumulate
+            #ls = ls / args.accumulate
         if self._trainer:
             self._trainer.backward(ls)
         else:
@@ -303,9 +303,9 @@ def train(data_train, data_eval, model):
         if int(os.environ.get('WINDOW_SIZE', False)):
             window_size = int(os.environ.get('WINDOW_SIZE', False))
             logging.info("using window size = {}".format(window_size))
-            loss_scale_param = {'scale_window': window_size, 'init_scale': 2**4}
+            loss_scale_param = {'scale_window': window_size, 'init_scale': 2**8}
         else:
-            loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 2**4}
+            loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 2**8}
     else:
         loss_scale_param = None
 
@@ -317,6 +317,7 @@ def train(data_train, data_eval, model):
     else:
         trainer = mx.gluon.Trainer(param_dict, args.optimizer, optim_params,
                                    update_on_kvstore=False)
+    trainer._scale = 1.
     fp16_trainer = FP16Trainer(trainer, dynamic_loss_scale=dynamic_loss_scale,
                                loss_scaler_params=loss_scale_param)
 
@@ -453,8 +454,8 @@ def train(data_train, data_eval, model):
                 running_mlm_loss += local_mlm_loss / args.accumulate / num_workers
                 running_nsp_loss += local_nsp_loss / args.accumulate / num_workers
                 # because byteps and horovod implicitly set scale /= num_workers
-                fp16_trainer.step(1, max_norm=num_workers,
-                                  num_ctxs=len(ctxs) * num_workers)
+                fp16_trainer.step(1., max_norm=1.,
+                                  num_ctxs=len(ctxs) * num_workers * args.accumulate)
                 local_num_masks, local_mlm_loss, local_nsp_loss = 0, 0, 0
                 if accumulate > 1:
                     param_dict.zero_grad()
@@ -581,10 +582,13 @@ if __name__ == '__main__':
                                             num_dataset_workers=args.num_dataset_workers,
                                             num_batch_workers=args.num_batch_workers)
         train(data_train, data_eval, model)
-    if data_eval and ((is_master_node or args.local_fs) and local_rank == 0):
+    if data_eval:
         # eval data is always based on a fixed npz file.
         shuffle = False
         dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
                                              len(ctxs), shuffle, 1, vocab)
+        #param_path = os.path.join(args.ckpt_dir, '%07d.params'%args.num_steps)
+        #nlp.utils.load_parameters(model.bert, param_path, ctx=ctxs, cast_dtype=True)
+        #logging.info('Loading step %d checkpoints from %s.', args.num_steps, param_path)
         evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, local_rank, 8)
     logging.info("Done")

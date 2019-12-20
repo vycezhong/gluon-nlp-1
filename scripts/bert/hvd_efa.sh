@@ -1,27 +1,27 @@
-pkill python
+clush --hostfile worker_8 "pkill python"
 
 DTYPE=float16
 MODEL=bert_24_1024_16
 
-#BS=32768
-#ACC=128
-#LR=0.004
-#WARMUP_RATIO=0.128
-#NUMSTEPS=1563
+BS=32768
+ACC=64
+LR=0.004
+WARMUP_RATIO=0.128
+NUMSTEPS=1563
 
-BS=65536
-ACC=16
-LR=0.006
-WARMUP_RATIO=0.2843
-NUMSTEPS=7038
+#BS=65536
+#ACC=16
+#LR=0.006
+#WARMUP_RATIO=0.2843
+#NUMSTEPS=7038
 OPTIMIZER=lamb2
 
-MAX_SEQ_LENGTH=128
-MAX_PREDICTIONS_PER_SEQ=20
+MAX_SEQ_LENGTH=512
+MAX_PREDICTIONS_PER_SEQ=80
 SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
-CKPTDIR="/home/ubuntu/efs/gluon-nlp-cus/ckpt_stage1_lamb_64k_hvd_sz"
+CKPTDIR="/home/ubuntu/efs/gluon-nlp-cus/ckpt_stage2_lamb_32k_hvd_sz"
 CKPTINTERVAL=300000000
 
 export TRUNCATE_NORM="${TRUNCATE_NORM:-1}"
@@ -38,7 +38,7 @@ mpirun --allow-run-as-root --tag-output -np 64 --hostfile worker_8 \
         -map-by ppr:4:socket -mca pml ob1 -mca btl ^openib \
         -x NCCL_SOCKET_IFNAME=^lo,docker0 -mca btl_tcp_if_exclude lo,docker0 --bind-to none \
         --mca plm_rsh_agent 'ssh -q -o StrictHostKeyChecking=no' \
-        -x NCCL_DEBUG=INFO -x NCCL_MIN_NRINGS=8 \
+        -x NCCL_DEBUG=INFO -x NCCL_MIN_NRINGS=1 \
         -x HOROVOD_HIERARCHICAL_ALLREDUCE=1 \
         -x HOROVOD_CYCLE_TIME=1 \
         -x EPS_AFTER_SQRT=1 -x LAMB_BULK=30 \
@@ -67,5 +67,8 @@ mpirun --allow-run-as-root --tag-output -np 64 --hostfile worker_8 \
             --repeat 8092 \
             --dataset_cached \
             --num_max_dataset_cached 8 \
+            --start_step 7038 \
+            --phase2 \
+            --phase1_num_steps 7038 \
             --short_seq_prob $SHORT_SEQ_PROB \
             --comm_backend horovod --log_interval $LOGINTERVAL --raw

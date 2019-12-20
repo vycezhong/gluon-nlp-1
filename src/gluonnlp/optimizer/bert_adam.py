@@ -105,14 +105,17 @@ class BERTAdam(Optimizer):
         lr = self._get_lr(indices)
         wd = self._get_wd(indices)
 
+
+        n = max(grad.norm(), 1)
         # pylint: disable=access-member-before-definition
         if not isinstance(self.rescale_grad, NDArray):
-            self.rescale_grad = full(shape=(1,), val=self.rescale_grad, ctx=weight.context)
+            rescale_grad = full(shape=(1,), val=self.rescale_grad, ctx=weight.context)
         else:
-            self.rescale_grad = self.rescale_grad.as_in_context(weight.context)
+            rescale_grad = self.rescale_grad.as_in_context(weight.context)
+        rescale_grad /= n
 
         kwargs = {'beta1': self.beta1, 'beta2': self.beta2, 'epsilon': self.epsilon,
-                  'rescale_grad': self.rescale_grad}
+                  'rescale_grad': rescale_grad}
         if self.clip_gradient:
             kwargs['clip_gradient'] = self.clip_gradient
         if not multi_precision:
