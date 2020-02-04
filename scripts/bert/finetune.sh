@@ -1,0 +1,1 @@
+python3 finetune_squad_multi_gpu.py --bert_model bert_24_1024_16 --optimizer bertadam --epochs 2 --gpus 0,1,2,3,4,5,6,7 --pretrained_bert_parameters ../../ckpt_stage2_double_ds_lamb_32k_hvd_sz/0001563.params --batch_size 32 --lr 3e-5 --wd 0.01 --output_dir output_dir_v3 --pretrained_bert_parameters ../../ckpt_stage2_ds_lamb_32k_hvd_sz/0000782.params --output_dir output_dir_v4_2nd
