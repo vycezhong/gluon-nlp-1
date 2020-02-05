@@ -270,11 +270,6 @@ def train(data_train, data_eval, model):
     fp16_trainer = FP16Trainer(trainer, dynamic_loss_scale=dynamic_loss_scale,
                                loss_scaler_params=loss_scale_param)
 
-    if args.start_step:
-        state_path = os.path.join(args.ckpt_dir, '%07d.states.%02d'%(args.start_step, local_rank))
-        logging.info('Loading trainer state from %s', state_path)
-        nlp.utils.load_states(trainer, state_path)
-
     accumulate = args.accumulate
     num_train_steps = args.num_steps
     warmup_ratio = args.warmup_ratio
@@ -394,13 +389,11 @@ def train(data_train, data_eval, model):
 
             batch_num += 1
 
-    if is_master_node:
-        save_states(step_num, trainer, args.ckpt_dir, local_rank)
-        if local_rank == 0:
-            save_parameters(step_num, model.bert, args.ckpt_dir)
-    mx.nd.waitall()
     train_end_time = time.time()
     logging.info('Train cost={:.1f}s'.format(train_end_time - train_begin_time))
+    if is_master_node and local_rank == 0:
+        save_parameters(step_num, model.bert, args.ckpt_dir)
+    mx.nd.waitall()
 
 if __name__ == '__main__':
     random_seed = random.randint(0, 1000)
