@@ -10,7 +10,7 @@ ACC=8
 LR=0.004
 #WARMUP_RATIO=0.128
 #NUMSTEPS=1563
-WARMUP_RATIO=0.256
+WARMUP_RATIO=0.181
 NUMSTEPS=782
 OPTIMIZER=nlamb
 
@@ -22,13 +22,13 @@ LOGINTERVAL=10
 CKPTDIR="/home/ec2-user/efs/shuai/gluon-nlp-1/ckpt_stage2_ds_lamb_32k_hvd_sz"
 CKPTINTERVAL=300000000
 
-DATA_HOME=/fsx/datasets/book-wiki-split-2k-v3
-DATA=$DATA_HOME/*.train
-DATAEVAL=$DATA_HOME/*.dev
+#DATA_HOME=/fsx/datasets/book-wiki-split-2k-v3
+#DATA=$DATA_HOME/*.train
+#DATAEVAL=$DATA_HOME/*.dev
 
-#DATA_HOME=/home/ec2-user/efs/shuai/dataset/phase1
-#DATA=$DATA_HOME/*.npz
-#DATAEVAL=/home/ec2-user/efs/shuai/gluon-nlp-1/ckpt_stage1_lamb_64k_hvd_sz/data_eval_cache/part-000.npz
+DATA_HOME=/home/ec2-user/efs/shuai/dataset/phase2
+DATA=$DATA_HOME/*.npz
+DATAEVAL=/home/ec2-user/efs/shuai/gluon-nlp-1/ckpt_stage2_lamb_32k_hvd_sz/data_eval_cache/part-000.npz
 
 mkdir -p $CKPTDIR
 
@@ -66,8 +66,8 @@ mpirun --allow-run-as-root -np 512 --hostfile $worker_hosts \
             --max_seq_length $MAX_SEQ_LENGTH \
             --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
             --num_dataset_workers 2 \
-            --num_batch_workers 1 \
-            --circle_length 2 \
+            --num_batch_workers 2 \
+            --circle_length 1 \
             --repeat 8092 \
             --dataset_cached \
             --num_max_dataset_cached 4 \
@@ -75,4 +75,4 @@ mpirun --allow-run-as-root -np 512 --hostfile $worker_hosts \
             --start_step 4977 \
             --phase2 \
             --phase1_num_steps 4977 \
-            --comm_backend horovod --log_interval $LOGINTERVAL --raw
+            --comm_backend horovod --log_interval $LOGINTERVAL

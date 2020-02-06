@@ -5,15 +5,16 @@ clush --hostfile $worker_hosts "pkill python"
 DTYPE=float16
 MODEL=bert_24_1024_16
 
-BS=49152
+#BS=49152
 #BS=65536
 #BS=16384
-ACC=1
-LR=0.007
+BS=98304
+ACC=2
+LR=0.0065
 #WARMUP_RATIO=0.2843
 #NUMSTEPS=7038
 #LR=0.006
-WARMUP_RATIO=0.568
+WARMUP_RATIO=0.375
 NUMSTEPS=4977
 OPTIMIZER=nlamb
 
@@ -31,7 +32,7 @@ DATAEVAL=$DATA_HOME/*.dev
 
 #DATA_HOME=/home/ec2-user/efs/shuai/dataset/phase1
 #DATA=$DATA_HOME/*.npz
-#DATAEVAL=/home/ec2-user/efs/shuai/gluon-nlp-1/ckpt_stage1_lamb_64k_hvd_sz/data_eval_cache/part-000.npz
+#DATAEVAL=/home/ec2-user/efs/shuai/gluon-nlp-1/ckpt_stage1_ds_lamb_64k_hvd_sz/data_eval_cache/part-000.npz
 
 mkdir -p $CKPTDIR
 
@@ -68,7 +69,7 @@ mpirun --allow-run-as-root -np 512 --hostfile $worker_hosts \
             --max_seq_length $MAX_SEQ_LENGTH \
             --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
             --num_dataset_workers 2 \
-            --num_batch_workers 1 \
+            --num_batch_workers 2 \
             --circle_length 2 \
             --repeat 8092 \
             --dataset_cached \
