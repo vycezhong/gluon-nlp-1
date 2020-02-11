@@ -513,7 +513,7 @@ def train():
             # update
             if not accumulate or (batch_id + 1) % accumulate == 0:
                 trainer.allreduce_grads()
-                nlp.utils.clip_grad_global_norm(params, norm_clip)
+                #nlp.utils.clip_grad_global_norm(params, norm_clip)
                 trainer.update(1)
                 if accumulate:
                     param_dict.zero_grad()

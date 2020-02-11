@@ -1,12 +1,13 @@
-worker_hosts=/home/ec2-user/efs/ads/bench_v2/scripts/bert/hosts_64_v2
+worker_hosts=east-host-128
 
 clush --hostfile $worker_hosts "pkill python"
 
 DTYPE=float16
 MODEL=bert_24_1024_16
 
-BS=32768
-ACC=8
+#BS=32768
+BS=33792
+ACC=3
 LR=0.004
 #WARMUP_RATIO=0.128
 #NUMSTEPS=1563
@@ -19,22 +20,23 @@ MAX_PREDICTIONS_PER_SEQ=80
 SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
-CKPTDIR="/home/ec2-user/efs/shuai/gluon-nlp-1/ckpt_stage2_ds_lamb_32k_hvd_sz"
+CKPTDIR="/fsx/gluon-nlp-1/ckpt_stage2_ds_lamb_32k_hvd_sz"
 CKPTINTERVAL=300000000
 
-#DATA_HOME=/fsx/datasets/book-wiki-split-2k-v3
-#DATA=$DATA_HOME/*.train
-#DATAEVAL=$DATA_HOME/*.dev
+DATA_HOME=/fsx/dataset/bert/book-wiki-split-2k-v3
+DATA=$DATA_HOME/*.train
+DATAEVAL=$DATA_HOME/*.dev
 
-DATA_HOME=/home/ec2-user/efs/shuai/dataset/phase2
-DATA=$DATA_HOME/*.npz
-DATAEVAL=/home/ec2-user/efs/shuai/gluon-nlp-1/ckpt_stage2_lamb_32k_hvd_sz/data_eval_cache/part-000.npz
+#DATA_HOME=/home/ec2-user/efs/shuai/dataset/phase2
+#DATA=$DATA_HOME/*.npz
+#DATAEVAL=/home/ec2-user/efs/shuai/gluon-nlp-1/ckpt_stage2_lamb_32k_hvd_sz/data_eval_cache/part-000.npz
 
 mkdir -p $CKPTDIR
 
 
-mpirun --allow-run-as-root -np 512 --hostfile $worker_hosts \
+mpirun --allow-run-as-root -np 1024 --hostfile $worker_hosts \
             -mca pml ob1 -mca btl ^openib -mca btl_tcp_if_exclude docker0,lo \
+            -mca routed_radix 300 \
             --bind-to none \
             -x NCCL_SOCKET_IFNAME=eth0 \
             -x NCCL_IB_HCA=eth0 \
@@ -67,7 +69,7 @@ mpirun --allow-run-as-root -np 512 --hostfile $worker_hosts \
             --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
             --num_dataset_workers 2 \
             --num_batch_workers 2 \
-            --circle_length 1 \
+            --circle_length 2 \
             --repeat 8092 \
             --dataset_cached \
             --num_max_dataset_cached 4 \
@@ -75,4 +77,4 @@ mpirun --allow-run-as-root -np 512 --hostfile $worker_hosts \
             --start_step 4977 \
             --phase2 \
             --phase1_num_steps 4977 \
-            --comm_backend horovod --log_interval $LOGINTERVAL
+            --comm_backend horovod --log_interval $LOGINTERVAL --raw
