@@ -20,6 +20,10 @@
 
 from . import bert_adam
 
+from . import nlamb
+
 from .bert_adam import *
 
-__all__ = bert_adam.__all__
+from .nlamb import *
+
+__all__ = bert_adam.__all__ + nlamb.__all__

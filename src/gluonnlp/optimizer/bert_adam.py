@@ -20,7 +20,7 @@ import os
 import warnings
 import numpy
 from mxnet.optimizer import Optimizer, register
-from mxnet.ndarray import zeros, NDArray, full
+from mxnet.ndarray import zeros, NDArray, full, ones
 from mxnet.ndarray.contrib import mp_adamw_update, adamw_update, \
     multi_mp_adamw_update, multi_adamw_update
 
@@ -115,13 +115,16 @@ class BERTAdam(Optimizer):
         wds = self._get_wds(indices)
 
         # pylint: disable=access-member-before-definition
-        if not isinstance(self.rescale_grad, NDArray):
-            self.rescale_grad = full(shape=(1,), val=self.rescale_grad, ctx=weight[0].context)
-        else:
-            self.rescale_grad = self.rescale_grad.as_in_context(weight[0].context)
+        #if not isinstance(self.rescale_grad, NDArray):
+        #    self.rescale_grad = full(shape=(1,), val=self.rescale_grad, ctx=weight[0].context)
+        #else:
+        #    self.rescale_grad = self.rescale_grad.as_in_context(weight[0].context)
+        for g in grad:
+            g[:] *= self.rescale_grad
+            g[:] /= g.norm()
 
         kwargs = {'beta1': self.beta1, 'beta2': self.beta2, 'epsilon': self.epsilon,
-                  'rescale_grad': self.rescale_grad}
+                  'rescale_grad': ones((1, ), ctx=weight[0].context)}
         if self.clip_gradient:
             kwargs['clip_gradient'] = self.clip_gradient
 
