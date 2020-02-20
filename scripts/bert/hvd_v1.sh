@@ -1,6 +1,6 @@
-worker_hosts=east-host-128
+worker_hosts=west-host-32
 
-clush --hostfile $worker_hosts "pkill python"
+clush --hostfile /home/ec2-user/$worker_hosts "pkill python"
 
 DTYPE=float16
 MODEL=bert_24_1024_16
@@ -9,7 +9,7 @@ MODEL=bert_24_1024_16
 #BS=65536
 #BS=16384
 BS=98304
-ACC=1
+ACC=4
 LR=0.0065
 #WARMUP_RATIO=0.2843
 #NUMSTEPS=7038
@@ -26,7 +26,7 @@ LOGINTERVAL=10
 CKPTDIR="/fsx/gluon-nlp-1/ckpt_stage1_ds_lamb_96k_hvd_sz"
 CKPTINTERVAL=300000000
 
-DATA_HOME=/fsx/dataset/bert/book-wiki-split-2k-v3
+DATA_HOME=/fsx/datasets/book-wiki-split-2k-v3
 DATA=$DATA_HOME/*.train
 DATAEVAL=$DATA_HOME/*.dev
 
@@ -36,7 +36,7 @@ DATAEVAL=$DATA_HOME/*.dev
 
 mkdir -p $CKPTDIR
 
-mpirun --allow-run-as-root -np 1024 --hostfile $worker_hosts \
+mpirun --allow-run-as-root -np 256 --hostfile $worker_hosts \
             -mca pml ob1 -mca btl ^openib -mca btl_tcp_if_exclude docker0,lo \
             -mca routed_radix 300 \
             --bind-to none \
@@ -71,7 +71,7 @@ mpirun --allow-run-as-root -np 1024 --hostfile $worker_hosts \
             --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
             --num_dataset_workers 2 \
             --num_batch_workers 2 \
-            --circle_length 2 \
+            --circle_length 4 \
             --repeat 8092 \
             --dataset_cached \
             --num_max_dataset_cached 4 \
