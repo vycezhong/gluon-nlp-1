@@ -180,8 +180,7 @@ class DataParallelBERT(nlp.utils.Parallelizable):
         with mx.autograd.record():
             out = self._model(input_id, masked_id, masked_position, masked_weight,
                               next_sentence_label, segment_id, valid_length)
-            classified, decoded, ls1, ls2 = out
-            ls = ls1 + ls2
+            decoded, ls = out
             ls = ls / args.accumulate
         if self._trainer:
             self._trainer.backward(ls)
@@ -190,8 +189,8 @@ class DataParallelBERT(nlp.utils.Parallelizable):
 
         masked_id = masked_id.reshape(-1)
         valid_length = valid_length.astype('float32', copy=False)
-        return next_sentence_label, classified, masked_id, decoded, \
-               masked_weight, ls1, ls2, valid_length
+        return next_sentence_label, masked_id, decoded, \
+               masked_weight, ls, valid_length
 
 def init_comm(backend):
     """Init communication backend"""
@@ -270,10 +269,10 @@ def train(data_train, data_eval, model):
     fp16_trainer = FP16Trainer(trainer, dynamic_loss_scale=dynamic_loss_scale,
                                loss_scaler_params=loss_scale_param)
 
-    if args.start_step:
-        state_path = os.path.join(args.ckpt_dir, '%07d.states.%02d'%(args.start_step, local_rank))
-        logging.info('Loading trainer state from %s', state_path)
-        nlp.utils.load_states(trainer, state_path)
+    #if args.start_step:
+    #    state_path = os.path.join(args.ckpt_dir, '%07d.states.%02d'%(args.start_step, local_rank))
+    #    logging.info('Loading trainer state from %s', state_path)
+    #    nlp.utils.load_states(trainer, state_path)
 
     accumulate = args.accumulate
     num_train_steps = args.num_steps
@@ -336,15 +335,15 @@ def train(data_train, data_eval, model):
             for i in range(num_data):
                 parallel.put(data_list[i])
             for _ in range(num_data):
-                (next_sentence_label, classified, masked_id,
-                 decoded, masked_weight, ls1, ls2, valid_length) = parallel.get()
+                (next_sentence_label, masked_id,
+                 decoded, masked_weight, ls, valid_length) = parallel.get()
                 ns_label_list.append(next_sentence_label)
-                ns_pred_list.append(classified)
+                ns_pred_list.append(next_sentence_label)
                 mask_label_list.append(masked_id)
                 mask_pred_list.append(decoded)
                 mask_weight_list.append(masked_weight)
-                running_mlm_loss += ls1.as_in_context(mx.cpu()) / len(ctxs)
-                running_nsp_loss += ls2.as_in_context(mx.cpu()) / len(ctxs)
+                running_mlm_loss += ls.as_in_context(mx.cpu()) / len(ctxs)
+                running_nsp_loss += 0
                 running_num_tks += valid_length.sum().as_in_context(mx.cpu())
             # pre fetch next batch
             try:
@@ -367,12 +366,12 @@ def train(data_train, data_eval, model):
             # logging
             if step_num % (args.log_interval) == 0 and (batch_num + 1) % accumulate == 0:
                 if args.no_compute_acc:
-                    log_noacc(begin_time, running_num_tks, running_mlm_loss / accumulate,
-                              running_nsp_loss / accumulate, step_num,
+                    log_noacc(begin_time, running_num_tks, running_mlm_loss,
+                              running_nsp_loss, step_num,
                               trainer, args.log_interval)
                 else:
-                    log(begin_time, running_num_tks, running_mlm_loss / accumulate,
-                        running_nsp_loss / accumulate, step_num, mlm_metric, nsp_metric,
+                    log(begin_time, running_num_tks, running_mlm_loss,
+                        running_nsp_loss, step_num, mlm_metric, nsp_metric,
                         trainer, args.log_interval)
                     mlm_metric.reset_local()
                     nsp_metric.reset_local()
@@ -385,12 +384,12 @@ def train(data_train, data_eval, model):
                     save_states(step_num, trainer, args.ckpt_dir, local_rank)
                     if local_rank == 0:
                         save_parameters(step_num, model.bert, args.ckpt_dir)
-            if step_num % args.eval_interval == 0 and data_eval \
-                    and (batch_num + 1) % accumulate == 0:
-                # eval data is always based on a fixed npz file.
-                dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
-                                                     1, False, 1, vocab)
-                evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype)
+            #if step_num % args.eval_interval == 0 and data_eval \
+            #        and (batch_num + 1) % accumulate == 0:
+            #    # eval data is always based on a fixed npz file.
+            #    dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
+            #                                         1, False, 1, vocab)
+            #    evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype)
 
             batch_num += 1
 
@@ -433,10 +432,10 @@ if __name__ == '__main__':
         nlp.utils.mkdir(cache_dir)
 
         # generate dev dataset from the raw text if needed
-        if not args.eval_use_npz:
-            data_eval = cache_file
-            if not os.path.isfile(cache_file) and rank == 0:
-                generate_dev_set(tokenizer, vocab, cache_file, args)
+        #if not args.eval_use_npz:
+        #    data_eval = cache_file
+        #    if not os.path.isfile(cache_file) and rank == 0:
+        #        generate_dev_set(tokenizer, vocab, cache_file, args)
 
     logging.debug('Random seed set to %d', random_seed)
     mx.random.seed(random_seed)
@@ -474,6 +473,6 @@ if __name__ == '__main__':
     if data_eval:
         # eval data is always based on a fixed npz file.
         shuffle = False
-        dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
-                                             len(ctxs), shuffle, 1, vocab)
-        evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype)
+        #dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
+        #                                     len(ctxs), shuffle, 1, vocab)
+        #evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype)

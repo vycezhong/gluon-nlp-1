@@ -69,6 +69,8 @@ def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
     # model
     model, vocabulary = nlp.model.get_model(model, dataset_name=dataset_name, vocab=vocab,
                                             pretrained=pretrained, ctx=ctx,
+                                            use_pooler=False,
+                                            use_classifier=False,
                                             hparam_allow_override=True)
 
     if not pretrained:
@@ -83,12 +85,10 @@ def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
     model.hybridize(static_alloc=True, static_shape=True)
 
     # losses
-    nsp_loss = mx.gluon.loss.SoftmaxCELoss()
     mlm_loss = mx.gluon.loss.SoftmaxCELoss()
-    nsp_loss.hybridize(static_alloc=True, static_shape=True)
     mlm_loss.hybridize(static_alloc=True, static_shape=True)
 
-    model = BERTForPretrain(model, nsp_loss, mlm_loss, len(vocabulary))
+    model = BERTForPretrain(model, mlm_loss, len(vocabulary))
     return model, vocabulary
 
 
@@ -354,7 +354,7 @@ def log_noacc(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss, s
     lr = trainer.learning_rate if trainer else 0
     # pylint: disable=line-too-long
     logging.info('[step {}]\tmlm_loss={:7.5f}\tnsp_loss={:5.2f}\tthroughput={:.1f}K tks/s\tlr={:.7f} time={:.2f}, latency={:.1f} ms/step'
-                 .format(step_num, running_mlm_loss.asscalar(), running_nsp_loss.asscalar(),
+                 .format(step_num, running_mlm_loss.asscalar(), running_nsp_loss,
                          throughput.asscalar(), lr, duration, duration*1000/log_interval))
     # pylint: enable=line-too-long
 
@@ -369,7 +369,7 @@ def log(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss, step_nu
     lr = trainer.learning_rate if trainer else 0
     # pylint: disable=line-too-long
     logging.info('[step {}]\tmlm_loss={:7.5f}\tmlm_acc={:4.2f}\tnsp_loss={:5.2f}\tnsp_acc={:5.2f}\tthroughput={:.1f}K tks/s\tlr={:.7f} time={:.2f}, latency={:.1f} ms/step'
-                 .format(step_num, running_mlm_loss.asscalar(), mlm_metric.get()[1] * 100, running_nsp_loss.asscalar(),
+                 .format(step_num, running_mlm_loss.asscalar(), mlm_metric.get()[1] * 100, running_nsp_loss,
                          nsp_metric.get()[1] * 100, throughput.asscalar(), lr, duration, duration*1000/log_interval))
     # pylint: enable=line-too-long
 
@@ -398,11 +398,10 @@ class BERTForPretrain(mx.gluon.Block):
         See document of `mx.gluon.Block`.
     """
 
-    def __init__(self, bert, mlm_loss, nsp_loss, vocab_size, prefix=None, params=None):
+    def __init__(self, bert, mlm_loss, vocab_size, prefix=None, params=None):
         super(BERTForPretrain, self).__init__(prefix=prefix, params=params)
         self.bert = bert
         self.mlm_loss = mlm_loss
-        self.nsp_loss = nsp_loss
         self._vocab_size = vocab_size
 
     def forward(self, input_id, masked_id, masked_position, masked_weight,
@@ -412,14 +411,15 @@ class BERTForPretrain(mx.gluon.Block):
         num_masks = masked_weight.sum() + 1e-8
         valid_length = valid_length.reshape(-1)
         masked_id = masked_id.reshape(-1)
-        _, _, classified, decoded = self.bert(input_id, segment_id, valid_length, masked_position)
+        #_, _, classified, decoded = self.bert(input_id, segment_id, valid_length, masked_position)
+        _, decoded = self.bert(input_id, segment_id, valid_length, masked_position)
         decoded = decoded.reshape((-1, self._vocab_size))
         ls1 = self.mlm_loss(decoded.astype('float32', copy=False),
                             masked_id, masked_weight.reshape((-1, 1)))
-        ls2 = self.nsp_loss(classified.astype('float32', copy=False), next_sentence_label)
+        #ls2 = self.nsp_loss(classified.astype('float32', copy=False), next_sentence_label)
         ls1 = ls1.sum() / num_masks
-        ls2 = ls2.mean()
-        return classified, decoded, ls1, ls2
+        #ls2 = ls2.mean()
+        return decoded, ls1
 
 
 def evaluate(data_eval, model, ctx, log_interval, dtype):
@@ -448,17 +448,17 @@ def evaluate(data_eval, model, ctx, log_interval, dtype):
             valid_length = valid_length.astype(dtype, copy=False)
             out = model(input_id, masked_id, masked_position, masked_weight, \
                         next_sentence_label, segment_id, valid_length)
-            classified, decoded, ls1, ls2 = out
+            decoded, ls = out
             masked_id = masked_id.reshape(-1)
             ns_label_list.append(next_sentence_label)
-            ns_pred_list.append(classified)
+            ns_pred_list.append(next_sentence_label)
             mask_label_list.append(masked_id)
             mask_pred_list.append(decoded)
             mask_weight_list.append(masked_weight)
 
             valid_length = valid_length.astype('float32', copy=False)
-            running_mlm_loss += ls1.as_in_context(mx.cpu())
-            running_nsp_loss += ls2.as_in_context(mx.cpu())
+            running_mlm_loss += ls.as_in_context(mx.cpu())
+            running_nsp_loss += 0
             running_num_tks += valid_length.sum().as_in_context(mx.cpu())
         nsp_metric.update(ns_label_list, ns_pred_list)
         mlm_metric.update(mask_label_list, mask_pred_list, mask_weight_list)
@@ -484,7 +484,7 @@ def evaluate(data_eval, model, ctx, log_interval, dtype):
     total_nsp_loss /= step_num
     logging.info('Eval mlm_loss={:.3f}\tmlm_acc={:.1f}\tnsp_loss={:.3f}\tnsp_acc={:.1f}\t'
                  .format(total_mlm_loss.asscalar(), mlm_metric.get_global()[1] * 100,
-                         total_nsp_loss.asscalar(), nsp_metric.get_global()[1] * 100))
+                         total_nsp_loss, nsp_metric.get_global()[1] * 100))
     logging.info('Eval cost={:.1f}s'.format(eval_end_time - eval_begin_time))
 
 

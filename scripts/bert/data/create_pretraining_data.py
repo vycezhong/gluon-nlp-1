@@ -119,6 +119,7 @@ def tokenize_lines_fn(x):
     """Worker function to tokenize lines based on the tokenizer, and perform vocabulary lookup."""
     lines, tokenizer, vocab = x
     results = []
+    truncated_len = 1024
     for line in lines:
         if not line:
             break
@@ -128,8 +129,10 @@ def tokenize_lines_fn(x):
             results.append([])
         else:
             tokens = vocab[tokenizer(line)]
-            if tokens:
+            if tokens and len(tokens) <= truncated_len:
                 results.append(tokens)
+            elif tokens and len(tokens) > truncated_len:
+                results.append(tokens[:truncated_len])
     return results
 
 def convert_to_npz(instances, max_seq_length):
@@ -337,20 +340,22 @@ def create_instances_from_document(x):
             if current_chunk:
                 # `a_end` is how many segments from `current_chunk` go into the `A`
                 # (first) sentence.
-                a_end = 1
-                if len(current_chunk) >= 2:
-                    a_end = random.randint(1, len(current_chunk) - 1)
+                #a_end = 1
+                #if len(current_chunk) >= 2:
+                #    a_end = random.randint(1, len(current_chunk) - 1)
 
                 tokens_a = []
-                for j in range(a_end):
+                #for j in range(a_end):
+                for j in range(len(current_chunk)):
                     tokens_a.extend(current_chunk[j])
 
                 tokens_b = []
                 # Random next
                 is_random_next = False
-                if len(current_chunk) == 1 or random.random() < 0.5:
+                #if len(current_chunk) == 1 or random.random() < 0.5:
+                if current_length < target_seq_length:
                     is_random_next = True
-                    target_b_length = target_seq_length - len(tokens_a)
+                    target_b_length = target_seq_length - len(tokens_a) - 1
 
                     # randomly choose a document other than itself
                     random_document_index = random.randint(0, len(all_documents) - 2)
@@ -365,17 +370,19 @@ def create_instances_from_document(x):
                             break
                     # We didn't actually use these segments so we 'put them back' so
                     # they don't go to waste.
-                    num_unused_segments = len(current_chunk) - a_end
-                    i -= num_unused_segments
+                    #num_unused_segments = len(current_chunk) - a_end
+                    #i -= num_unused_segments
+                    truncate_seq_pair(tokens_a, tokens_b, max_num_tokens - 1)
+                    assert len(tokens_b) >= 1
                 # Actual next
                 else:
                     is_random_next = False
-                    for j in range(a_end, len(current_chunk)):
-                        tokens_b.extend(current_chunk[j])
-                truncate_seq_pair(tokens_a, tokens_b, max_num_tokens)
+                    truncate_seq_pair(tokens_a, tokens_b, max_num_tokens)
 
+                #    for j in range(a_end, len(current_chunk)):
+                #        tokens_b.extend(current_chunk[j])
                 assert len(tokens_a) >= 1
-                assert len(tokens_b) >= 1
+                #assert len(tokens_b) >= 1
 
                 tokens = []
                 segment_ids = []
@@ -387,11 +394,14 @@ def create_instances_from_document(x):
                 tokens.append(_SEP_TOKEN)
                 segment_ids.append(0)
 
-                for token in tokens_b:
-                    tokens.append(token)
+                if len(tokens_b) > 0:
+                    tokens.append(_SEP_TOKEN)
                     segment_ids.append(1)
-                tokens.append(_SEP_TOKEN)
-                segment_ids.append(1)
+                    for token in tokens_b:
+                        tokens.append(token)
+                        segment_ids.append(1)
+                    tokens.append(_SEP_TOKEN)
+                    segment_ids.append(1)
 
                 (tokens, masked_lm_positions,
                  masked_lm_labels) = create_masked_lm_predictions(

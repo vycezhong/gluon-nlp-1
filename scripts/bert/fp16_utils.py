@@ -74,14 +74,14 @@ class FP16Trainer:
         if max_norm:
             _, ratio, is_finite = nlp.utils.grad_global_norm(self.fp32_trainer._params,
                                                              max_norm * self._scaler.loss_scale)
-            step_size = ratio * step_size
+            #step_size = ratio * step_size
             if self._support_nan_check:
                 self.fp32_trainer.update(step_size)
                 overflow = is_finite.asscalar() < 1
             else:
                 overflow = is_finite.asscalar() < 1
                 if not overflow:
-                    step_size = step_size.asscalar()
+                    #step_size = step_size.asscalar()
                     self.fp32_trainer.update(step_size)
         else:
             # TODO(haibin) optimize the performance when max_norm is not present
