@@ -16,7 +16,7 @@ import os
 import numpy as np
 
 from mxnet.metric import Accuracy, F1, CompositeEvalMetric
-from classification import GlueTask
+from .classification import GlueTask
 import gluonnlp as nlp
 
 
@@ -63,6 +63,7 @@ class FinTask(GlueTask):
 
     def get_dataset(self, root, start_year, end_year, cutoff):
         dataset = FinText(root=root, start_year=start_year, end_year=end_year)
+        dataset = dataset[1:]
         self.set_label(dataset, start_year, end_year, cutoff)
         return dataset
 
