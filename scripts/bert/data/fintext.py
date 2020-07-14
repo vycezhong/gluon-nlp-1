@@ -13,14 +13,82 @@
 # limitations under the License.
 
 import os
+import csv
 import numpy as np
 
 from mxnet.metric import Accuracy, F1, CompositeEvalMetric
+from mxnet.gluon.data import SimpleDataset
 from .classification import GlueTask
 import gluonnlp as nlp
 
 
-class FinText(nlp.data.TSVDataset):
+class CSVDataset(SimpleDataset):
+    """Text dataset that reads CSV file.
+
+    The returned dataset includes samples, each of which can either be a list of text fields
+    if field_separator is specified, or otherwise a single string segment produced by the
+    sample_splitter.
+
+
+    Parameters
+    ----------
+    filename : str or list of str
+        Path to the input text file or list of paths to the input text files.
+    encoding : str, default 'utf8'
+        File encoding format.
+    delimiter : str, default ','
+        Delimiter in CSV reader
+    quotechar : str, default '"'
+        quotechar in CSV reader
+    num_discard_samples : int, default 0
+        Number of samples discarded at the head of the first file.
+    field_indices : list of int or None, default None
+        If set, for each sample, only fields with provided indices are selected as the output.
+        Otherwise all fields are returned.
+    """
+    def __init__(self, filename, encoding='utf8', delimiter=',', quotechar='"',
+                 num_discard_samples=0, field_indices=None):
+
+        if not isinstance(filename, (tuple, list)):
+            filename = (filename, )
+
+        self._filenames = [os.path.expanduser(f) for f in filename]
+        self._delimiter = delimiter
+        self._quotechar = quotechar
+        self._encoding = encoding
+        self._num_discard_samples = num_discard_samples
+        self._field_indices = field_indices
+        super(CSVDataset, self).__init__(self._read())
+
+    def _should_discard(self):
+        discard = self._num_discard_samples > 0
+        self._num_discard_samples -= 1
+        return discard
+
+    def _field_selector(self, fields):
+        if not self._field_indices:
+            return fields
+        try:
+            result = [fields[i] for i in self._field_indices]
+        except IndexError as e:
+            raise(IndexError('%s. Fields = %s'%(str(e), str(fields))))
+        return result
+
+    def _read(self):
+        all_samples = []
+        for filename in self._filenames:
+            content = csv.reader(filename, delimiter=self._delimiter, quotechar=self._quotechar,
+                                 encoding=self._encoding, skipinitialspace=True)
+            num_discard_samples = self._num_discard_samples
+            samples = (s for s in content if not self._should_discard())
+            if not self._allow_missing:
+                samples = [self._field_selector(s) for s in samples]
+            self._num_discard_samples = num_discard_samples
+            all_samples += samples
+        return all_samples
+
+
+class FinText(CSVDataset):
     def __init__(self, root, start_year, end_year, **kwargs):
         root = os.path.expanduser(root)
         if not os.path.isdir(root):
@@ -36,7 +104,6 @@ class FinText(nlp.data.TSVDataset):
         field_separator = nlp.data.Splitter('\t')
         super(FinText, self).__init__(filename,
                                       field_indices=field_indices,
-                                      field_separator=field_separator,
                                       num_discard_samples=1,
                                       **kwargs)
 
