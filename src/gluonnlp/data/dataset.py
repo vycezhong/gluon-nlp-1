@@ -156,6 +156,7 @@ class TSVDataset(SimpleDataset):
         for filename in self._filenames:
             with io.open(filename, 'r', encoding=self._encoding) as fin:
                 content = fin.read()
+            num_discard_samples = self._num_discard_samples
             samples = (s for s in self._sample_splitter(content) if not self._should_discard())
             if self._field_separator:
                 if not self._allow_missing:
@@ -172,6 +173,7 @@ class TSVDataset(SimpleDataset):
                     if num_missing > 0:
                         warnings.warn('%d incomplete samples in %s'%(num_missing, filename))
                     samples = selected_samples
+            self._num_discard_samples = num_discard_samples
             all_samples += samples
         return all_samples
 

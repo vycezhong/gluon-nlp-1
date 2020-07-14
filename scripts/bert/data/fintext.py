@@ -31,12 +31,13 @@ class FinText(nlp.data.TSVDataset):
                              for qtr in range(1, 5)])
         filename = [os.path.join(self._root, 'MDNAwLABEL_%s.csv' % quarter)
                     for quarter in quarters]
-        TICKER_IDX, YEAR_IDX, QUARTER_IDX, MEAN_RETURN_IDX, X_IDX, LABEL_IDX = 1, 2, 3, 4, 9, 5
+        TICKER_IDX, YEAR_IDX, QUARTER_IDX, MEAN_RETURN_IDX, X_IDX, LABEL_IDX = 1, 2, 3, 4, 6, 5
         field_indices = [TICKER_IDX, YEAR_IDX, QUARTER_IDX, MEAN_RETURN_IDX, X_IDX, LABEL_IDX]
-        field_separator = nlp.data.Splitter(',')
+        field_separator = nlp.data.Splitter('\t')
         super(FinText, self).__init__(filename,
                                       field_indices=field_indices,
                                       field_separator=field_separator,
+                                      num_discard_samples=1,
                                       **kwargs)
 
 
@@ -50,20 +51,23 @@ class FinTask(GlueTask):
         super(FinTask, self).__init__(class_labels, metric, is_pair)
 
     def set_label(self, dataset, start_year, end_year, cutoff=50):
+        years = np.array([x[1] for x in dataset], dtype='int')
+        quarters = np.array([x[2] for x in dataset], dtype='int')
+        mean_returns = np.array([x[3] for x in dataset], dtype='float32')
         for y in range(start_year, end_year):
             for q in range(1, 5):
-                idx1 = np.where((dataset[1] == y) & (dataset[2] == q))[0]
+                idx1 = np.where((years == y) & (quarters == q))[0]
                 if len(idx1) > 0:
-                    mean_returns = dataset[:, 3]
                     cut = np.percentile(mean_returns[idx1], cutoff)
                     idx2 = np.where(mean_returns > cut)[0]
                     idx2 = np.array(list(set(idx1).intersection(set(idx2))))
-                    dataset[idx1, -1] = 0
-                    dataset[idx2, -1] = 1
+                    for idx in idx1:
+                        dataset[idx][-1] = '0'
+                    for idx in idx2:
+                        dataset[idx][-1] = '1'
 
     def get_dataset(self, root, start_year, end_year, cutoff):
         dataset = FinText(root=root, start_year=start_year, end_year=end_year)
-        dataset = dataset[1:]
         self.set_label(dataset, start_year, end_year, cutoff)
         return dataset
 

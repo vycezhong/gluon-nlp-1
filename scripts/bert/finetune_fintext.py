@@ -271,14 +271,14 @@ batchify_fn = nlp.data.batchify.Tuple(
 # load symbolic model
 model_prefix = args.model_prefix
 
-net = BertForFin(bert=bert)
+net = BertForFin(bert=bert, num_classes=2)
 if model_parameters:
     # load complete BertForQA parameters
     nlp.utils.load_parameters(net, model_parameters, ctx=ctx, cast_dtype=True)
 elif pretrained_bert_parameters:
     # only load BertModel parameters
     nlp.utils.load_parameters(bert, pretrained_bert_parameters, ctx=ctx,
-                              ignore_extra=True, cast_dtype=True)
+                              ignore_extra=True, cast_dtype=True, allow_missing=True)
     net.classifier.initialize(init=mx.init.Normal(0.02), ctx=ctx)
 else:
     # no checkpoint is loaded
@@ -375,7 +375,7 @@ def preprocess_data(tokenizer, root, task, batch_size, dev_batch_size, max_len, 
 # Get the loader.
 logging.info('processing dataset...')
 train_dataloader, test_dataloader, num_train_examples = preprocess_data(
-    tokenizer, args.dataset_path, task, batch_size, test_batch_size, args.max_len, vocab)
+    tokenizer, args.dataset_path, task, batch_size, test_batch_size, args.max_seq_length, vocab)
 
 
 def train():
