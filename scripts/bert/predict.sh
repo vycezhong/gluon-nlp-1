@@ -1,0 +1,1 @@
+horovodrun -np 8 python3 finetune_fintext.py --bert_model bert_24_1024_16 --batch_size 4 --lr 3e-5 --epochs 2 --gpu --dtype float16 --comm_backend horovod --dataset_path /fsx/fintext --max_seq_length 512 --sentencepiece bert_fintext.model --model_parameters output_dir/net.params --only_predict

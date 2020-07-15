@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import sys
 import csv
 import numpy as np
 
@@ -20,6 +21,9 @@ from mxnet.metric import Accuracy, F1, CompositeEvalMetric
 from mxnet.gluon.data import SimpleDataset
 from .classification import GlueTask
 import gluonnlp as nlp
+
+
+csv.field_size_limit(sys.maxsize)
 
 
 class CSVDataset(SimpleDataset):
@@ -77,14 +81,15 @@ class CSVDataset(SimpleDataset):
     def _read(self):
         all_samples = []
         for filename in self._filenames:
-            content = csv.reader(filename, delimiter=self._delimiter, quotechar=self._quotechar,
-                                 encoding=self._encoding, skipinitialspace=True)
-            num_discard_samples = self._num_discard_samples
-            samples = (s for s in content if not self._should_discard())
-            if not self._allow_missing:
+            with open(filename, encoding=self._encoding) as csvfile:
+                content = csv.reader(csvfile,
+                                     delimiter=self._delimiter,
+                                     quotechar=self._quotechar)
+                num_discard_samples = self._num_discard_samples
+                samples = (s for s in content if not self._should_discard())
                 samples = [self._field_selector(s) for s in samples]
-            self._num_discard_samples = num_discard_samples
-            all_samples += samples
+                self._num_discard_samples = num_discard_samples
+                all_samples += samples
         return all_samples
 
 
@@ -96,12 +101,11 @@ class FinText(CSVDataset):
         self._root = root
         quarters = np.array([str(yr) + "_" + str(qtr)
                              for yr in range(start_year, end_year)
-                             for qtr in range(1, 5)])
+                             for qtr in range(1, 5) if str(yr) + "_" + str(qtr) != '2019_4'])
         filename = [os.path.join(self._root, 'MDNAwLABEL_%s.csv' % quarter)
                     for quarter in quarters]
-        TICKER_IDX, YEAR_IDX, QUARTER_IDX, MEAN_RETURN_IDX, X_IDX, LABEL_IDX = 1, 2, 3, 4, 6, 5
+        TICKER_IDX, YEAR_IDX, QUARTER_IDX, MEAN_RETURN_IDX, X_IDX, LABEL_IDX = 1, 2, 3, 4, 9, 5
         field_indices = [TICKER_IDX, YEAR_IDX, QUARTER_IDX, MEAN_RETURN_IDX, X_IDX, LABEL_IDX]
-        field_separator = nlp.data.Splitter('\t')
         super(FinText, self).__init__(filename,
                                       field_indices=field_indices,
                                       num_discard_samples=1,
@@ -111,6 +115,7 @@ class FinText(CSVDataset):
 class FinTask(GlueTask):
     def __init__(self):
         is_pair = True
+        #class_labels = ['0', '1', '2']
         class_labels = ['0', '1']
         metric = CompositeEvalMetric()
         metric.add(Accuracy())
@@ -128,13 +133,19 @@ class FinTask(GlueTask):
                     cut = np.percentile(mean_returns[idx1], cutoff)
                     idx2 = np.where(mean_returns > cut)[0]
                     idx2 = np.array(list(set(idx1).intersection(set(idx2))))
+                    #cut = np.percentile(mean_returns[idx1], 100 - cutoff)
+                    #idx3 = np.where(mean_returns < cut)[0]
+                    #idx3 = np.array(list(set(idx1).intersection(set(idx3))))
                     for idx in idx1:
                         dataset[idx][-1] = '0'
                     for idx in idx2:
                         dataset[idx][-1] = '1'
+                    #for idx in idx3:
+                    #    dataset[idx][-1] = '0'
 
     def get_dataset(self, root, start_year, end_year, cutoff):
         dataset = FinText(root=root, start_year=start_year, end_year=end_year)
+        dataset = SimpleDataset([x for x in dataset if x[-2] != 'FAILED'])
         self.set_label(dataset, start_year, end_year, cutoff)
         return dataset
 

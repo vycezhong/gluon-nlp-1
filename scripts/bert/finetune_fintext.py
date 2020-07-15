@@ -271,15 +271,15 @@ batchify_fn = nlp.data.batchify.Tuple(
 # load symbolic model
 model_prefix = args.model_prefix
 
-net = BertForFin(bert=bert, num_classes=2)
+net = BertForFin(bert=bert, num_classes=2, dropout=0.1)
 if model_parameters:
     # load complete BertForQA parameters
     nlp.utils.load_parameters(net, model_parameters, ctx=ctx, cast_dtype=True)
 elif pretrained_bert_parameters:
     # only load BertModel parameters
+    net.initialize(init=mx.init.Normal(0.02), ctx=ctx)
     nlp.utils.load_parameters(bert, pretrained_bert_parameters, ctx=ctx,
                               ignore_extra=True, cast_dtype=True, allow_missing=True)
-    net.classifier.initialize(init=mx.init.Normal(0.02), ctx=ctx)
 else:
     # no checkpoint is loaded
     net.initialize(init=mx.init.Normal(0.02), ctx=ctx)
@@ -305,7 +305,7 @@ def convert_examples_to_features(example,
     label_dtype = 'int32' if class_labels else 'float32'
     # get the label
     label = example[-1]
-    example = example[-2]
+    example = [example[-2]]
     #create label maps if classification task
     if class_labels:
         label_map = {}
@@ -340,9 +340,8 @@ def preprocess_data(tokenizer, root, task, batch_size, dev_batch_size, max_len, 
                     class_labels=task.class_labels,
                     label_alias=task.label_alias,
                     vocab=vocab)
-
     # data train
-    train_tsv = task.get_dataset(root, start_year=2010, end_year=2019, cutoff=20)
+    train_tsv = task.get_dataset(root, start_year=2010, end_year=2019, cutoff=80)
     data_train = mx.gluon.data.SimpleDataset(list(map(trans, train_tsv)))
     data_train_len = data_train.transform(lambda _, segment_ids, valid_length, label: valid_length,
                                           lazy=False)
@@ -358,18 +357,12 @@ def preprocess_data(tokenizer, root, task, batch_size, dev_batch_size, max_len, 
     # data loader for training
     loader_train = gluon.data.DataLoader(dataset=data_train, num_workers=4,
                                          batch_sampler=batch_sampler, batchify_fn=batchify_fn)
-
     # data dev. For MNLI, more than one dev set is available
-    dev_tsv = task.get_dataset(root, start_year=2019, end_year=2020, cutoff=20)
-    dev_tsv_list = dev_tsv if isinstance(dev_tsv, list) else [dev_tsv]
-    loader_dev_list = []
-    for segment, data in dev_tsv_list:
-        data_dev = mx.gluon.data.SimpleDataset(list(map(trans, data)))
-        loader_dev = mx.gluon.data.DataLoader(data_dev, batch_size=dev_batch_size, num_workers=4,
-                                              shuffle=False, batchify_fn=batchify_fn)
-        loader_dev_list.append((segment, loader_dev))
-
-    return loader_train, loader_dev_list, len(data_train)
+    dev_tsv = task.get_dataset(root, start_year=2019, end_year=2020, cutoff=80)
+    data_dev = mx.gluon.data.SimpleDataset(list(map(trans, dev_tsv)))
+    loader_dev = mx.gluon.data.DataLoader(data_dev, batch_size=dev_batch_size, num_workers=4,
+                                          shuffle=False, batchify_fn=batchify_fn)
+    return loader_train, loader_dev, len(data_train)
 
 
 # Get the loader.
@@ -447,7 +440,7 @@ def train():
             # set new lr
             step_num = set_new_lr(step_num, batch_id)
             # forward and backward
-            _, inputs, token_types, valid_length, label = data
+            inputs, token_types, valid_length, label = data
             num_labels = len(inputs)
             log_num += num_labels
             total_num += num_labels
@@ -457,9 +450,7 @@ def train():
                           token_types.as_in_context(ctx),
                           valid_length.as_in_context(ctx).astype('float32'))
 
-                loss = loss_function(out, [
-                    label.as_in_context(ctx).astype('float32')
-                ]).sum() / num_labels
+                loss = loss_function(out, label.as_in_context(ctx).astype('float32')).sum() / num_labels
 
                 if accumulate:
                     loss = loss / accumulate
@@ -517,7 +508,7 @@ def evaluate():
     epoch_tic = time.time()
     total_num = 0
     for data in test_dataloader:
-        _, inputs, token_types, valid_length, label = data
+        inputs, token_types, valid_length, label = data
         total_num += len(inputs)
         out = net(inputs.as_in_context(ctx),
                   token_types.as_in_context(ctx),
@@ -529,7 +520,7 @@ def evaluate():
     if not isinstance(metric_nm, list):
         metric_nm, metric_val = [metric_nm], [metric_val]
     metric_str = 'validation metrics:' + ','.join([i + ':%.4f' for i in metric_nm])
-    logging.info(metric_str, *metric_val)
+    log.info(metric_str, *metric_val)
 
     mx.nd.waitall()
     epoch_toc = time.time()

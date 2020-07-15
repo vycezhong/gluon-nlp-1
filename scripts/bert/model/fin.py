@@ -39,11 +39,13 @@ class BertForFin(HybridBlock):
         See document of `mx.gluon.Block`.
     """
 
-    def __init__(self, bert, num_classes, prefix=None, params=None):
+    def __init__(self, bert, num_classes, dropout=0.0, prefix=None, params=None):
         super(BertForFin, self).__init__(prefix=prefix, params=params)
         self.bert = bert
         with self.name_scope():
-            self.classifier = nn.Dense(units=num_classes, flatten=False)
+            self.classifier = nn.HybridSequential(prefix=prefix)
+            self.classifier.add(nn.Dropout(rate=dropout))
+            self.classifier.add(nn.Dense(units=num_classes, flatten=False))
 
     def hybrid_forward(self, F, inputs, token_types, valid_length=None):
         # pylint: disable=arguments-differ
@@ -67,6 +69,6 @@ class BertForFin(HybridBlock):
         # XXX Temporary hack for hybridization as hybridblock does not support None inputs
         if isinstance(valid_length, list) and len(valid_length) == 0:
             valid_length = None
-        bert_output = self.bert(inputs, token_types, valid_length)
-        output = self.classifier(bert_output)
+        _, bert_pooler_output = self.bert(inputs, token_types, valid_length)
+        output = self.classifier(bert_pooler_output)
         return output
