@@ -57,6 +57,12 @@ class FP16Trainer:
                 ls = loss * self._scaler.loss_scale
         mx.autograd.backward(ls)
 
+    def gradient_pre_div(self, params, num_workers):
+        for p in params:
+            for g in p.list_grad():
+                g[:] /= num_workers
+        
+
     def step(self, batch_size, max_norm=None):
         """Makes one step of parameter update. Should be called after
         `fp16_optimizer.backward()`, and outside of `record()` scope.
@@ -69,18 +75,20 @@ class FP16Trainer:
         max_norm : NDArray, optional, default is None
             max value for global 2-norm of gradients.
         """
+        self.gradient_pre_div(self.fp32_trainer._params, max_norm)
         self.fp32_trainer.allreduce_grads()
         step_size = batch_size * self._scaler.loss_scale
         if max_norm:
             _, ratio, is_finite = nlp.utils.grad_global_norm(self.fp32_trainer._params,
-                                                             max_norm * self._scaler.loss_scale)
-            #step_size = ratio * step_size
+                                                             self._scaler.loss_scale)
+            step_size = ratio * step_size
             if self._support_nan_check:
                 self.fp32_trainer.update(step_size)
                 overflow = is_finite.asscalar() < 1
             else:
                 overflow = is_finite.asscalar() < 1
                 if not overflow:
+                    step_size = step_size.asscalar()
                     self.fp32_trainer.update(step_size)
         else:
             # TODO(haibin) optimize the performance when max_norm is not present
