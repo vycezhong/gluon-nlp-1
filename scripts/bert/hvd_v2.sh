@@ -1,18 +1,17 @@
-worker_hosts=west-host-32
+worker_hosts=host165
 
-clush --hostfile /home/ec2-user/west-host-32 "pkill python"
+clush --hostfile $worker_hosts "pkill python"
 
 DTYPE=float16
 MODEL=bert_24_1024_16
 
 BS=33792
-ACC=12
-LR=0.004
-#WARMUP_RATIO=0.128
-#NUMSTEPS=1563
-WARMUP_RATIO=0.181
+ACC=2
+LR=0.005
+WARMUP_RATIO=0.192
+CONST_RATIO=0.108
 NUMSTEPS=782
-OPTIMIZER=nlamb
+OPTIMIZER=neslamb
 
 MAX_SEQ_LENGTH=512
 MAX_PREDICTIONS_PER_SEQ=80
@@ -26,20 +25,17 @@ DATA_HOME=/fsx/datasets/book-wiki-split-2k-v3
 DATA=$DATA_HOME/*.train
 DATAEVAL=$DATA_HOME/*.dev
 
-#DATA_HOME=/home/ec2-user/efs/shuai/dataset/phase2
-#DATA=$DATA_HOME/*.npz
-#DATAEVAL=/home/ec2-user/efs/shuai/gluon-nlp-1/ckpt_stage2_lamb_32k_hvd_sz/data_eval_cache/part-000.npz
-
 mkdir -p $CKPTDIR
 
 
-mpirun --allow-run-as-root -np 256 --hostfile $worker_hosts \
+mpirun --allow-run-as-root -np 1536 --hostfile $worker_hosts \
             -mca pml ob1 -mca btl ^openib -mca btl_tcp_if_exclude docker0,lo \
             -mca routed_radix 300 \
             --bind-to none \
             -x NCCL_SOCKET_IFNAME=eth0 \
             -x NCCL_IB_HCA=eth0 \
             -x FI_PROVIDER="efa" -x FI_EFA_TX_MIN_CREDITS=64 \
+            -x FI_OFI_RXR_RX_COPY_UNEXP=1 -x FI_OFI_RXR_RX_COPY_OOO=1 -x FI_EFA_MR_CACHE_ENABLE=1 -x FI_OFI_RXR_INLINE_MR_ENABLE=1 \
             -x LD_LIBRARY_PATH=$HOME/aws-ofi-nccl/install/lib/:$HOME/nccl/build/lib:/usr/local/cuda-10.0/lib64:/opt/amazon/efa/lib64:$LD_LIBRARY_PATH \
             -x NCCL_MIN_NRINGS=1 \
             -x NCCL_DEBUG=VERSION \
@@ -48,13 +44,14 @@ mpirun --allow-run-as-root -np 256 --hostfile $worker_hosts \
             -x HOROVOD_NUM_NCCL_STREAMS=2 \
             -x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=99999 \
             -x MXNET_SAFE_ACCUMULATION=1 \
-            -x NCCL_TREE_THRESHOLD=15360000 \
+            -x NCCL_TREE_THRESHOLD=4294967296 \
             --tag-output ./ompi_bind_DGX1.sh \
             python3 run_pretraining.py \
             --data=$DATA \
             --data_eval=$DATAEVAL \
             --optimizer $OPTIMIZER \
             --warmup_ratio $WARMUP_RATIO \
+            --const_ratio $CONST_RATIO \
             --num_steps $NUMSTEPS \
             --ckpt_interval $CKPTINTERVAL \
             --dtype $DTYPE \
@@ -73,7 +70,7 @@ mpirun --allow-run-as-root -np 256 --hostfile $worker_hosts \
             --dataset_cached \
             --num_max_dataset_cached 4 \
             --short_seq_prob $SHORT_SEQ_PROB \
-            --start_step 4977 \
+            --start_step 4248 \
             --phase2 \
-            --phase1_num_steps 4977 \
+            --phase1_num_steps 4248 \
             --comm_backend horovod --log_interval $LOGINTERVAL --raw

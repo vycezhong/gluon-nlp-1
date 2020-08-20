@@ -22,8 +22,20 @@ from . import bert_adam
 
 from . import nlamb
 
+from . import nlmb
+
+from . import nslmb
+
+from . import nnlmb
+
 from .bert_adam import *
 
 from .nlamb import *
 
-__all__ = bert_adam.__all__ + nlamb.__all__
+from .nlmb import *
+
+from .nslmb import *
+
+from .nnlmb import *
+
+__all__ = bert_adam.__all__ + nlamb.__all__ + nlmb.__all__ + nslmb.__all__ + nnlmb.__all__

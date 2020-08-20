@@ -30,6 +30,7 @@ This example shows how to pre-train a BERT model with Gluon NLP Toolkit.
 
 import os
 import sys
+import math
 import random
 import warnings
 import logging
@@ -86,6 +87,8 @@ parser.add_argument('--start_step', type=int, default=0,
 parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate')
 parser.add_argument('--warmup_ratio', type=float, default=0.01,
                     help='ratio of warmup steps used in NOAM\'s stepsize schedule')
+parser.add_argument('--const_ratio', type=float, default=0.,
+                    help='ratio of const steps used in NOAM\'s stepsize schedule')
 parser.add_argument('--dtype', type=str, default='float16', help='data dtype')
 parser.add_argument('--no_compute_acc', action='store_true',
                     help='skip accuracy metric computation during training')
@@ -251,19 +254,23 @@ def train(data_train, data_eval, model):
 
     logging.info('Creating distributed trainer...')
     lr = args.lr
+    param_idx2name = {}
+    param_idx2name.update(enumerate(model.collect_params().keys()))
     optim_params = {'learning_rate': lr, 'epsilon': 1e-6, 'wd': 0.01}
+    optim_params['param_idx2name'] = param_idx2name
     if args.dtype == 'float16':
         optim_params['multi_precision'] = True
 
     dynamic_loss_scale = args.dtype == 'float16'
     if dynamic_loss_scale:
-        loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 2**10}
+        loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 2**12}
     else:
         loss_scale_param = None
 
     # backend specific implementation
     if backend == 'horovod':
         trainer = hvd.DistributedTrainer(param_dict, args.optimizer, optim_params)
+        trainer._scale = 1
     else:
         trainer = mx.gluon.Trainer(param_dict, args.optimizer, optim_params,
                                    update_on_kvstore=False)
@@ -283,7 +290,6 @@ def train(data_train, data_eval, model):
         for p in params:
             p.grad_req = 'add'
 
-    train_begin_time = time.time()
     begin_time = time.time()
     running_mlm_loss, running_nsp_loss = 0, 0
     running_num_tks = 0
@@ -300,6 +306,10 @@ def train(data_train, data_eval, model):
     num_ctxes = len(ctxs)
     parallel = nlp.utils.Parallel(num_ctxes if num_ctxes > 1 else 0, parallel_model)
 
+    num_const_steps = int(num_train_steps * args.const_ratio)
+    num_wc_steps = num_warmup_steps + num_const_steps
+    num_recur_steps = int(num_const_steps / 5)
+
     while step_num < num_train_steps:
 
         data_train_iter = iter(data_train)
@@ -313,9 +323,11 @@ def train(data_train, data_eval, model):
                 step_num += 1
                 # update learning rate
                 if step_num <= num_warmup_steps:
-                    new_lr = lr * step_num / num_warmup_steps
+                    new_lr = lr * (step_num / num_warmup_steps)
+                elif step_num <= num_wc_steps:
+                    new_lr = lr
                 else:
-                    offset = (num_train_steps - step_num) / (num_train_steps - num_warmup_steps)
+                    offset = (num_train_steps - step_num) / (num_train_steps - num_wc_steps)
                     new_lr = lr * max(offset, 0)
                 trainer.set_learning_rate(new_lr)
                 if args.profile:
@@ -389,13 +401,12 @@ def train(data_train, data_eval, model):
 
             batch_num += 1
 
-    train_end_time = time.time()
-    logging.info('Train cost={:.1f}s'.format(train_end_time - train_begin_time))
     if is_master_node and local_rank == 0:
         save_parameters(step_num, model.bert, args.ckpt_dir)
     mx.nd.waitall()
 
 if __name__ == '__main__':
+    train_begin_time = time.time()
     random_seed = random.randint(0, 1000)
 
     dataset_name, vocab = args.dataset_name, None
@@ -464,6 +475,8 @@ if __name__ == '__main__':
                                         num_dataset_workers=args.num_dataset_workers,
                                         num_batch_workers=args.num_batch_workers)
         train(data_train, data_eval, model)
+        train_end_time = time.time()
+        logging.info('Train cost={:.1f}s'.format(train_end_time - train_begin_time))
     if data_eval:
         # eval data is always based on a fixed npz file.
         shuffle = False
