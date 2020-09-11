@@ -18,10 +18,10 @@ MAX_PREDICTIONS_PER_SEQ=20
 SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
-CKPTDIR="/fsx/gluon-nlp-1/ckpt_stage1_ds_lamb_96k_hvd_sz"
+CKPTDIR=~/fsx/gluon-nlp-1/ckpt_stage1_ds_lamb_96k_hvd_sz
 CKPTINTERVAL=300000000
 
-DATA_HOME=/fsx/datasets/book-wiki-split-2k-v3
+DATA_HOME=~/datasets/bert/pretrain/book-wiki-split-2k-v3
 DATA=$DATA_HOME/*.train
 DATAEVAL=$DATA_HOME/*.dev
 
@@ -35,7 +35,7 @@ mpirun --allow-run-as-root -np 1536 --hostfile $worker_hosts -N 8 \
             -x NCCL_IB_HCA=eth0 \
             -x FI_PROVIDER="efa" -x FI_EFA_TX_MIN_CREDITS=64 \
             -x FI_OFI_RXR_RX_COPY_UNEXP=1 -x FI_OFI_RXR_RX_COPY_OOO=1 -x FI_EFA_MR_CACHE_ENABLE=1 -x FI_OFI_RXR_INLINE_MR_ENABLE=1 \
-            -x LD_LIBRARY_PATH=$HOME/aws-ofi-nccl/install/lib/:$HOME/nccl/build/lib:/usr/local/cuda-10.0/lib64:/opt/amazon/efa/lib64:$LD_LIBRARY_PATH \
+            -x LD_LIBRARY_PATH=/usr/local/nccl/lib:/usr/local/cuda-10.2/lib64:/opt/amazon/efa/lib64:$LD_LIBRARY_PATH \
             -x NCCL_MIN_NRINGS=1 \
             -x NCCL_DEBUG=VERSION \
             -x HOROVOD_HIERARCHICAL_ALLREDUCE=0 \
