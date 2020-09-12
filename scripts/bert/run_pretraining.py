@@ -38,6 +38,7 @@ import functools
 import time
 import argparse
 
+logging.info("test")
 import mxnet as mx
 import gluonnlp as nlp
 try:

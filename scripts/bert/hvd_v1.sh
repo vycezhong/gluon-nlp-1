@@ -18,16 +18,16 @@ MAX_PREDICTIONS_PER_SEQ=20
 SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
-CKPTDIR=~/fsx/gluon-nlp-1/ckpt_stage1_ds_lamb_96k_hvd_sz
+CKPTDIR="$HOME/fsx/gluon-nlp-1/ckpt_stage1_ds_lamb_96k_hvd_sz"
 CKPTINTERVAL=300000000
 
-DATA_HOME=~/datasets/bert/pretrain/book-wiki-split-2k-v3
+DATA_HOME="$HOME/datasets/bert/pretrain/book-wiki-split-2k-v3"
 DATA=$DATA_HOME/*.train
 DATAEVAL=$DATA_HOME/*.dev
 
 mkdir -p $CKPTDIR
 
-mpirun --allow-run-as-root -np 1536 --hostfile $worker_hosts -N 8 \
+mpirun --allow-run-as-root -np 64 --hostfile $worker_hosts -N 8 \
             --mca pml ob1 --mca btl ^openib --mca btl_tcp_if_exclude docker0,lo \
             --mca plm_rsh_num_concurrent 300 --mca routed_radix 600 \
             --bind-to none \
