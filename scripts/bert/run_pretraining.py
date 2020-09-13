@@ -38,7 +38,6 @@ import functools
 import time
 import argparse
 
-logging.info("test")
 import mxnet as mx
 import gluonnlp as nlp
 try:
@@ -310,12 +309,15 @@ def train(data_train, data_eval, model):
     num_const_steps = int(num_train_steps * args.const_ratio)
     num_wc_steps = num_warmup_steps + num_const_steps
     num_recur_steps = int(num_const_steps / 5)
-
+    
+    logging.info("debug-1")
     while step_num < num_train_steps:
 
         data_train_iter = iter(data_train)
         end_of_batch = False
         next_data_batch = next(data_train_iter)
+
+        logging.info("debug-2")
         while not end_of_batch:
             data_batch = next_data_batch
             if step_num >= num_train_steps:
