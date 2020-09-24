@@ -307,8 +307,12 @@ def train(data_train, data_eval, model):
             param_dict, args.optimizer, optim_params)
         trainer._scale = 1
     elif backend == 'byteps':
+        compression_params = {
+            "fp16": True if args.dtype == "float16" else False
+        }
         trainer = bps.DistributedTrainer(
-            param_dict, args.optimizer, optim_params)
+            param_dict, args.optimizer, optim_params,
+            compression_params=compression_params)
     else:
         trainer = mx.gluon.Trainer(param_dict, args.optimizer, optim_params,
                                    update_on_kvstore=False)
