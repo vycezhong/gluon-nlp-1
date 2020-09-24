@@ -20,6 +20,7 @@ import warnings
 import mxnet as mx
 import gluonnlp as nlp
 
+
 class FP16Trainer:
     """ Trainer for mixed precision training.
 
@@ -36,6 +37,7 @@ class FP16Trainer:
         for `DynamicLossScaler`.
         See each `LossScaler` for a list of supported arguments'
     """
+
     def __init__(self, trainer, dynamic_loss_scale=True, loss_scaler_params=None):
         if trainer._kvstore_params['update_on_kvstore'] is not False and trainer._kvstore:
             err = 'Only gluon.Trainer created with update_on_kvstore=False is supported.'
@@ -43,7 +45,7 @@ class FP16Trainer:
         self.fp32_trainer = trainer
         loss_scaler_params = loss_scaler_params if loss_scaler_params else {}
         self._scaler = DynamicLossScaler(**loss_scaler_params) if dynamic_loss_scale \
-                       else StaticLossScaler(**loss_scaler_params)
+            else StaticLossScaler(**loss_scaler_params)
         # if the optimizer supports NaN check, we can always defer the NaN check to the optimizer
         # TODO(haibin) this should be added via registry
         self._support_nan_check = trainer._optimizer.__class__.__name__ == 'BERTAdam'
@@ -61,7 +63,6 @@ class FP16Trainer:
         for p in params:
             for g in p.list_grad():
                 g[:] /= num_workers
-
 
     def step(self, batch_size, max_norm=None):
         """Makes one step of parameter update. Should be called after
@@ -81,14 +82,14 @@ class FP16Trainer:
         if max_norm:
             _, ratio, is_finite = nlp.utils.grad_global_norm(self.fp32_trainer._params,
                                                              self._scaler.loss_scale/batch_size)
-            #step_size = ratio * step_size
+            step_size = ratio * step_size
             if self._support_nan_check:
                 self.fp32_trainer.update(step_size)
                 overflow = is_finite.asscalar() < 1
             else:
                 overflow = is_finite.asscalar() < 1
                 if not overflow:
-                    #step_size = step_size.asscalar()
+                    step_size = step_size.asscalar()
                     self.fp32_trainer.update(step_size)
         else:
             # TODO(haibin) optimize the performance when max_norm is not present
@@ -103,16 +104,20 @@ class FP16Trainer:
         # update scale based on overflow information
         self._scaler.update_scale(overflow)
 
+
 class LossScaler:
     """Abstract loss scaler"""
+
     def has_overflow(self, params):
         """ detect inf and nan """
         is_not_finite = 0
         for param in params:
             if param.grad_req != 'null':
                 grad = param.list_grad()[0]
-                is_not_finite += mx.nd.contrib.isnan(grad).sum().astype('float32', copy=False)
-                is_not_finite += mx.nd.contrib.isinf(grad).sum().astype('float32', copy=False)
+                is_not_finite += mx.nd.contrib.isnan(
+                    grad).sum().astype('float32', copy=False)
+                is_not_finite += mx.nd.contrib.isinf(
+                    grad).sum().astype('float32', copy=False)
         # NDArray is implicitly converted to bool
         if is_not_finite == 0:
             return False
@@ -122,13 +127,16 @@ class LossScaler:
     def update_scale(self, overflow):
         raise NotImplementedError()
 
+
 class StaticLossScaler(LossScaler):
     """Static loss scaler"""
+
     def __init__(self, init_scale=1):
         self.loss_scale = init_scale
 
     def update_scale(self, overflow):
         """update loss scale"""
+
 
 class DynamicLossScaler(LossScaler):
     """Class that manages dynamic loss scaling.
@@ -142,6 +150,7 @@ class DynamicLossScaler(LossScaler):
     Everytime when a NaN is detected in the gradient, the scale is reduced (by default)
     by 2x. On the other hand, if a NaN is not detected for a long time
     (e.g. 2000 steps), then the scale is increased (by default) by 2x."""
+
     def __init__(self, init_scale=2.**10, scale_factor=2., scale_window=2000,
                  tolerance=0.):
         self.loss_scale = init_scale
@@ -159,14 +168,15 @@ class DynamicLossScaler(LossScaler):
         if overflow:
             self._last_overflow_iter = self._num_steps
             self._overflows_since_rescale += 1
-            percentage = self._overflows_since_rescale / float(iter_since_rescale)
+            percentage = self._overflows_since_rescale / \
+                float(iter_since_rescale)
             # we tolerate a certrain amount of NaNs before actually scaling it down
             if percentage >= self.tolerance:
                 self.loss_scale /= self.scale_factor
                 self._last_rescale_iter = self._num_steps
                 self._overflows_since_rescale = 0
                 if self.loss_scale < 1:
-                    warnings.warn('DynamicLossScaler: overflow detected. set loss_scale = %s'%
+                    warnings.warn('DynamicLossScaler: overflow detected. set loss_scale = %s' %
                                   self.loss_scale)
         elif (self._num_steps - self._last_overflow_iter) % self.scale_window == 0:
             self.loss_scale *= self.scale_factor
