@@ -1,4 +1,6 @@
 worker_hosts=host165
+server_hosts=host165
+ip=$(ifconfig $interface | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1')
 
 clush --hostfile $worker_hosts "pkill python"
 
@@ -27,42 +29,55 @@ DATAEVAL=$DATA_HOME/*.dev
 
 mkdir -p $CKPTDIR
 
-mpirun --allow-run-as-root -np 8 --hostfile $worker_hosts -N 8 \
-            --mca pml ob1 --mca btl ^openib --mca btl_tcp_if_exclude docker0,lo \
-            --bind-to none \
-            -x NCCL_SOCKET_IFNAME=ens3 \
-            -x LD_LIBRARY_PATH=/usr/local/cuda-10.2/lib:/usr/local/cuda-10.2/lib64:$LD_LIBRARY_PATH \
-            -x NCCL_MIN_NRINGS=1 \
-            -x NCCL_DEBUG=VERSION \
-            -x HOROVOD_HIERARCHICAL_ALLREDUCE=0 \
-            -x HOROVOD_CYCLE_TIME=80 \
-            -x HOROVOD_NUM_NCCL_STREAMS=2 \
-            -x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=99999 \
-            -x MXNET_SAFE_ACCUMULATION=1 \
-            -x NCCL_TREE_THRESHOLD=4294967296 \
-            --tag-output ./ompi_bind_DGX1.sh \
-            python3 run_pretraining.py \
-            --data=$DATA \
-            --data_eval=$DATAEVAL \
-            --optimizer $OPTIMIZER \
-            --warmup_ratio $WARMUP_RATIO \
-            --const_ratio $CONST_RATIO \
-            --num_steps $NUMSTEPS \
-            --ckpt_interval $CKPTINTERVAL \
-            --dtype $DTYPE \
-            --ckpt_dir $CKPTDIR \
-            --lr $LR \
-            --total_batch_size $BS \
-            --total_batch_size_eval $BS \
-            --accumulate $ACC \
-            --model $MODEL \
-            --max_seq_length $MAX_SEQ_LENGTH \
-            --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
-            --num_dataset_workers 2 \
-            --num_batch_workers 1 \
-            --circle_length 2 \
-            --repeat 8092 \
-            --dataset_cached \
-            --num_max_dataset_cached 4 \
-            --short_seq_prob $SHORT_SEQ_PROB \
-            --comm_backend horovod --log_interval $LOGINTERVAL --raw
+python $repo_path/launcher/dist_launcher.py \
+  -WH $worker_hosts \
+  -SH $server_hosts \
+  --scheduler-ip $ip \
+  --scheduler-port 1234 \
+  --interface ens3 \
+  -i ~/yuchen.pem \
+  --username ubuntu \
+  --env NCCL_SOCKET_IFNAME=ens3 \
+  --env LD_LIBRARY_PATH=/usr/local/cuda-10.2/lib:/usr/local/cuda-10.2/lib64:$LD_LIBRARY_PATH \
+  --env NCCL_MIN_NRINGS=1 \
+  --env NCCL_DEBUG=VERSION \
+  --env HOROVOD_HIERARCHICAL_ALLREDUCE=0 \
+  --env HOROVOD_CYCLE_TIME=80 \
+  --env HOROVOD_NUM_NCCL_STREAMS=2 \
+  --env MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=99999 \
+  --env MXNET_SAFE_ACCUMULATION=1 \
+  --env NCCL_TREE_THRESHOLD=4294967296 \
+  --env OMP_WAIT_POLICY:PASSIVE \
+  --env OMP_NUM_THREADS:4 \
+  --env BYTEPS_THREADPOOL_SIZE:16 \
+  --env BYTEPS_MIN_COMPRESS_BYTES:1024000 \
+  --env BYTEPS_NUMA_ON:1 \
+  --env NVIDIA_VISIBLE_DEVICES:0,1,2,3,4,5,6,7 \
+  --env BYTEPS_SERVER_ENGINE_THREAD:4 \
+  --env BYTEPS_PARTITION_BYTES:4096000 \
+  --env BYTEPS_LOG_LEVEL:INFO \
+  source ~/.profile && bpslaunch python3 run_pretraining.py \
+  --data=$DATA \
+  --data_eval=$DATAEVAL \
+  --optimizer $OPTIMIZER \
+  --warmup_ratio $WARMUP_RATIO \
+  --const_ratio $CONST_RATIO \
+  --num_steps $NUMSTEPS \
+  --ckpt_interval $CKPTINTERVAL \
+  --dtype $DTYPE \
+  --ckpt_dir $CKPTDIR \
+  --lr $LR \
+  --total_batch_size $BS \
+  --total_batch_size_eval $BS \
+  --accumulate $ACC \
+  --model $MODEL \
+  --max_seq_length $MAX_SEQ_LENGTH \
+  --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
+  --num_dataset_workers 2 \
+  --num_batch_workers 1 \
+  --circle_length 2 \
+  --repeat 8092 \
+  --dataset_cached \
+  --num_max_dataset_cached 4 \
+  --short_seq_prob $SHORT_SEQ_PROB \
+  --comm_backend byteps --log_interval $LOGINTERVAL --raw
