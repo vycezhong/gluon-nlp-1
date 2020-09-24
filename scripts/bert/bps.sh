@@ -22,10 +22,10 @@ MAX_PREDICTIONS_PER_SEQ=20
 SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
-CKPTDIR="$HOME/fsx/gluon-nlp-1/ckpt_stage1_ds_lamb_96k_hvd_sz"
+CKPTDIR=$HOME/fsx/gluon-nlp-1/ckpt_stage1_ds_lamb_96k_hvd_sz
 CKPTINTERVAL=300000000
 
-DATA_HOME="$HOME/datasets/bert/pretrain/book-wiki-split-2k-v3"
+DATA_HOME=$HOME/datasets/bert/pretrain/book-wiki-split-2k-v3
 DATA=$DATA_HOME/*.train
 DATAEVAL=$DATA_HOME/*.dev
 
@@ -54,7 +54,7 @@ python ~/repos/byteps/launcher/dist_launcher.py \
   --env BYTEPS_SERVER_ENGINE_THREAD:4 \
   --env BYTEPS_PARTITION_BYTES:4096000 \
   --env BYTEPS_LOG_LEVEL:INFO \
-  source ~/.profile; bpslaunch python3 ~/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
+  "source ~/.profile; bpslaunch python3 ~/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
   --data=$DATA \
   --data_eval=$DATAEVAL \
   --optimizer $OPTIMIZER \
@@ -78,4 +78,4 @@ python ~/repos/byteps/launcher/dist_launcher.py \
   --dataset_cached \
   --num_max_dataset_cached 4 \
   --short_seq_prob $SHORT_SEQ_PROB \
-  --comm_backend byteps --log_interval $LOGINTERVAL --raw
+  --comm_backend byteps --log_interval $LOGINTERVAL --raw"
