@@ -39,16 +39,12 @@ python ~/repos/byteps/launcher/dist_launcher.py \
   --interface $interface \
   -i ~/yuchen.pem \
   --username ubuntu \
-  --env NCCL_SOCKET_IFNAME=$interface \
-  --env LD_LIBRARY_PATH=/usr/local/cuda-10.2/lib:/usr/local/cuda-10.2/lib64:$LD_LIBRARY_PATH \
-  --env NCCL_MIN_NRINGS=1 \
-  --env NCCL_DEBUG=VERSION \
-  --env HOROVOD_HIERARCHICAL_ALLREDUCE=0 \
-  --env HOROVOD_CYCLE_TIME=80 \
-  --env HOROVOD_NUM_NCCL_STREAMS=2 \
-  --env MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=99999 \
-  --env MXNET_SAFE_ACCUMULATION=1 \
-  --env NCCL_TREE_THRESHOLD=4294967296 \
+  --env NCCL_SOCKET_IFNAME:$interface \
+  --env NCCL_MIN_NRINGS:1 \
+  --env NCCL_DEBUG:VERSION \
+  --env MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD:99999 \
+  --env MXNET_SAFE_ACCUMULATION:1 \
+  --env NCCL_TREE_THRESHOLD:4294967296 \
   --env OMP_WAIT_POLICY:PASSIVE \
   --env OMP_NUM_THREADS:4 \
   --env BYTEPS_THREADPOOL_SIZE:16 \
