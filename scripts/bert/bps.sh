@@ -1,5 +1,6 @@
 worker_hosts=host165
 server_hosts=host165
+interface=ens3
 ip=$(ifconfig $interface | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1')
 port=1234
 
@@ -35,10 +36,10 @@ python ~/repos/byteps/launcher/dist_launcher.py \
   -SH $server_hosts \
   --scheduler-ip $ip \
   --scheduler-port $port \
-  --interface ens3 \
+  --interface $interface \
   -i ~/yuchen.pem \
   --username ubuntu \
-  --env NCCL_SOCKET_IFNAME=ens3 \
+  --env NCCL_SOCKET_IFNAME=$interface \
   --env LD_LIBRARY_PATH=/usr/local/cuda-10.2/lib:/usr/local/cuda-10.2/lib64:$LD_LIBRARY_PATH \
   --env NCCL_MIN_NRINGS=1 \
   --env NCCL_DEBUG=VERSION \
