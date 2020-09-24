@@ -1,3 +1,4 @@
+#!/bin/bash
 worker_hosts=host165
 server_hosts=host165
 interface=ens3
