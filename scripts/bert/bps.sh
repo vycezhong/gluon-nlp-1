@@ -4,7 +4,7 @@ interface=ens3
 ip=$(ifconfig $interface | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1')
 port=1234
 
-clush --hostfile $worker_hosts "pkill python"
+clush --hostfile $worker_hosts "pkill python; pkill bpslaunch"
 
 DTYPE=float16
 MODEL=bert_12_768_12
@@ -54,7 +54,7 @@ python ~/repos/byteps/launcher/dist_launcher.py \
   --env BYTEPS_SERVER_ENGINE_THREAD:4 \
   --env BYTEPS_PARTITION_BYTES:4096000 \
   --env BYTEPS_LOG_LEVEL:INFO \
-  'source ~/.profile && bpslaunch python3 ~/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
+  "source ~/.profile && bpslaunch python3 ~/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
   --data=$DATA \
   --data_eval=$DATAEVAL \
   --optimizer $OPTIMIZER \
@@ -78,4 +78,4 @@ python ~/repos/byteps/launcher/dist_launcher.py \
   --dataset_cached \
   --num_max_dataset_cached 4 \
   --short_seq_prob $SHORT_SEQ_PROB \
-  --comm_backend byteps --log_interval $LOGINTERVAL --raw'
+  --comm_backend byteps --log_interval $LOGINTERVAL --raw"
