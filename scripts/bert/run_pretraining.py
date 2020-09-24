@@ -45,6 +45,11 @@ try:
 except ImportError:
     pass
 
+try:
+    import byteps.mxnet as bps
+except ImportError:
+    pass
+
 from fp16_utils import FP16Trainer
 from pretraining_utils import get_model_loss, get_pretrain_data_npz, get_dummy_dataloader
 from pretraining_utils import split_and_load, log, log_noacc, evaluate
@@ -150,7 +155,7 @@ parser.add_argument('--phase2', action='store_true', help='phase 2 training')
 parser.add_argument('--phase1_num_steps', type=int, help='number of steps for phase 1')
 # communication
 parser.add_argument('--comm_backend', type=str, default='device',
-                    choices=['horovod', 'dist_sync_device', 'device'],
+                    choices=['horovod', 'dist_sync_device', 'device', 'byteps'],
                     help='Communication backend.')
 parser.add_argument('--gpus', type=str, default=None,
                     help='List of gpus to run when device or dist_sync_device is used for '
@@ -212,6 +217,18 @@ def init_comm(backend):
         local_rank = hvd.local_rank()
         is_master_node = rank == local_rank
         ctxs = [mx.gpu(local_rank)]
+    elif backend == 'byteps':
+        try:
+            import byteps.mxnet as bps
+        except ImportError:
+            logging.info('byteps must be installed.')
+            sys.exit(1)
+        bps.init()
+        store = None
+        num_workers = bps.size()
+        local_rank = bps.local_rank()
+        is_master_node = rank == local_rank
+        ctxs = [mx.gpu(local_rank)]
     else:
         # kvstore
         store = mx.kv.create(backend)
@@ -246,6 +263,9 @@ def train(data_train, data_eval, model):
     param_dict = model.bert.collect_params()
     if backend == 'horovod':
         hvd.broadcast_parameters(param_dict, root_rank=0)
+    elif backend == 'byteps':
+        # parameter sync will be done in bps.DistributedTrainer
+        pass
 
     mlm_metric = nlp.metric.MaskedAccuracy()
     nsp_metric = nlp.metric.MaskedAccuracy()
@@ -271,6 +291,8 @@ def train(data_train, data_eval, model):
     if backend == 'horovod':
         trainer = hvd.DistributedTrainer(param_dict, args.optimizer, optim_params)
         trainer._scale = 1
+    elif backend == 'byteps':
+        trainer = bps.DistributedTrainer(param_dict, args.optimizer, optim_params)
     else:
         trainer = mx.gluon.Trainer(param_dict, args.optimizer, optim_params,
                                    update_on_kvstore=False)
@@ -309,15 +331,13 @@ def train(data_train, data_eval, model):
     num_const_steps = int(num_train_steps * args.const_ratio)
     num_wc_steps = num_warmup_steps + num_const_steps
     num_recur_steps = int(num_const_steps / 5)
-    
-    logging.info("debug-1")
+
     while step_num < num_train_steps:
 
         data_train_iter = iter(data_train)
         end_of_batch = False
         next_data_batch = next(data_train_iter)
 
-        logging.info("debug-2")
         while not end_of_batch:
             data_batch = next_data_batch
             if step_num >= num_train_steps:
