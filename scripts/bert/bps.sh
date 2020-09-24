@@ -29,7 +29,7 @@ DATAEVAL=$DATA_HOME/*.dev
 
 mkdir -p $CKPTDIR
 
-python $repo_path/launcher/dist_launcher.py \
+python ~/repos/byteps/launcher/dist_launcher.py \
   -WH $worker_hosts \
   -SH $server_hosts \
   --scheduler-ip $ip \
