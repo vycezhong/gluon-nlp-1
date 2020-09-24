@@ -61,8 +61,10 @@ parser = argparse.ArgumentParser(description='BERT pretraining example.')
 # logging and serialization
 parser.add_argument('--ckpt_dir', type=str, default='./ckpt_dir',
                     help='Path to checkpoint directory')
-parser.add_argument('--log_interval', type=int, default=250, help='Report interval')
-parser.add_argument('--ckpt_interval', type=int, default=25000, help='Checkpoint interval')
+parser.add_argument('--log_interval', type=int,
+                    default=250, help='Report interval')
+parser.add_argument('--ckpt_interval', type=int,
+                    default=25000, help='Checkpoint interval')
 # model
 parser.add_argument('--pretrained', action='store_true',
                     help='Initialize the model with pretrained weights')
@@ -84,7 +86,8 @@ parser.add_argument('--total_batch_size', type=int, default=256,
 parser.add_argument('--accumulate', type=int, default=1,
                     help='Number of batches for gradient accumulation. '
                          'total_batch_size = batch_size_per_worker * num_worker * accumulate.')
-parser.add_argument('--num_steps', type=int, default=20, help='Number of optimization steps')
+parser.add_argument('--num_steps', type=int, default=20,
+                    help='Number of optimization steps')
 parser.add_argument('--optimizer', type=str, default='bertadam',
                     help='The optimization algorithm')
 parser.add_argument('--start_step', type=int, default=0,
@@ -98,7 +101,8 @@ parser.add_argument('--dtype', type=str, default='float16', help='data dtype')
 parser.add_argument('--no_compute_acc', action='store_true',
                     help='skip accuracy metric computation during training')
 # validation
-parser.add_argument('--eval_interval', type=int, default=50000, help='Evaluation interval')
+parser.add_argument('--eval_interval', type=int,
+                    default=50000, help='Evaluation interval')
 parser.add_argument('--total_batch_size_eval', type=int, default=256,
                     help='Global batch size for evaluation. total_batch_size_eval = '
                          'batch_size_eval_per_worker * num_worker * accumulate.')
@@ -152,10 +156,12 @@ parser.add_argument('--num_max_dataset_cached', type=int, default=0,
                     help='Maximum number of cached processed training dataset.')
 # stage 2
 parser.add_argument('--phase2', action='store_true', help='phase 2 training')
-parser.add_argument('--phase1_num_steps', type=int, help='number of steps for phase 1')
+parser.add_argument('--phase1_num_steps', type=int,
+                    help='number of steps for phase 1')
 # communication
 parser.add_argument('--comm_backend', type=str, default='device',
-                    choices=['horovod', 'dist_sync_device', 'device', 'byteps'],
+                    choices=['horovod', 'dist_sync_device',
+                             'device', 'byteps'],
                     help='Communication backend.')
 parser.add_argument('--gpus', type=str, default=None,
                     help='List of gpus to run when device or dist_sync_device is used for '
@@ -167,6 +173,7 @@ nlp.utils.mkdir(args.ckpt_dir)
 level = logging.DEBUG if args.verbose else logging.INFO
 os.environ['MXNET_GPU_MEM_POOL_TYPE'] = 'Round'
 
+
 class DataParallelBERT(nlp.utils.Parallelizable):
     """Data parallel BERT model.
 
@@ -175,13 +182,14 @@ class DataParallelBERT(nlp.utils.Parallelizable):
     model : Block
         The BERT model.
     """
+
     def __init__(self, model, trainer):
         self._model = model
         self._trainer = trainer
 
     def forward_backward(self, x):
         """forward backward implementation"""
-        (input_id, masked_id, masked_position, masked_weight, \
+        (input_id, masked_id, masked_position, masked_weight,
          next_sentence_label, segment_id, valid_length) = x
 
         valid_length = valid_length.astype(args.dtype, copy=False)
@@ -199,7 +207,8 @@ class DataParallelBERT(nlp.utils.Parallelizable):
         masked_id = masked_id.reshape(-1)
         valid_length = valid_length.astype('float32', copy=False)
         return next_sentence_label, classified, masked_id, decoded, \
-               masked_weight, ls1, ls2, valid_length
+            masked_weight, ls1, ls2, valid_length
+
 
 def init_comm(backend):
     """Init communication backend"""
@@ -226,6 +235,7 @@ def init_comm(backend):
         bps.init()
         store = None
         num_workers = bps.size()
+        rank = bps.rank()
         local_rank = bps.local_rank()
         is_master_node = rank == local_rank
         ctxs = [mx.gpu(local_rank)]
@@ -240,6 +250,7 @@ def init_comm(backend):
                [mx.gpu(int(x)) for x in args.gpus.split(',')]
     return store, num_workers, rank, local_rank, is_master_node, ctxs
 
+
 backend = args.comm_backend
 store, num_workers, rank, local_rank, is_master_node, ctxs = init_comm(backend)
 
@@ -253,9 +264,11 @@ logging.info(os.environ)
 assert args.total_batch_size % (args.accumulate * num_workers) == 0
 assert args.total_batch_size_eval % (args.accumulate * num_workers) == 0
 batch_size = int(args.total_batch_size / num_workers / args.accumulate)
-batch_size_eval = int(args.total_batch_size_eval / num_workers / args.accumulate)
+batch_size_eval = int(args.total_batch_size_eval /
+                      num_workers / args.accumulate)
 assert batch_size > 0
 assert batch_size_eval > 0
+
 
 def train(data_train, data_eval, model):
     """Training function."""
@@ -283,16 +296,19 @@ def train(data_train, data_eval, model):
 
     dynamic_loss_scale = args.dtype == 'float16'
     if dynamic_loss_scale:
-        loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 2**12}
+        loss_scale_param = {'scale_window': 2000 /
+                            num_workers, 'init_scale': 2**12}
     else:
         loss_scale_param = None
 
     # backend specific implementation
     if backend == 'horovod':
-        trainer = hvd.DistributedTrainer(param_dict, args.optimizer, optim_params)
+        trainer = hvd.DistributedTrainer(
+            param_dict, args.optimizer, optim_params)
         trainer._scale = 1
     elif backend == 'byteps':
-        trainer = bps.DistributedTrainer(param_dict, args.optimizer, optim_params)
+        trainer = bps.DistributedTrainer(
+            param_dict, args.optimizer, optim_params)
     else:
         trainer = mx.gluon.Trainer(param_dict, args.optimizer, optim_params,
                                    update_on_kvstore=False)
@@ -326,7 +342,8 @@ def train(data_train, data_eval, model):
     # create dummy data loader if needed
     parallel_model = DataParallelBERT(model, trainer=fp16_trainer)
     num_ctxes = len(ctxs)
-    parallel = nlp.utils.Parallel(num_ctxes if num_ctxes > 1 else 0, parallel_model)
+    parallel = nlp.utils.Parallel(
+        num_ctxes if num_ctxes > 1 else 0, parallel_model)
 
     num_const_steps = int(num_train_steps * args.const_ratio)
     num_wc_steps = num_warmup_steps + num_const_steps
@@ -350,11 +367,13 @@ def train(data_train, data_eval, model):
                 elif step_num <= num_wc_steps:
                     new_lr = lr
                 else:
-                    offset = (num_train_steps - step_num) / (num_train_steps - num_wc_steps)
+                    offset = (num_train_steps - step_num) / \
+                        (num_train_steps - num_wc_steps)
                     new_lr = lr * max(offset, 0)
                 trainer.set_learning_rate(new_lr)
                 if args.profile:
-                    profile(step_num, 10, 14, profile_name=args.profile + str(rank))
+                    profile(step_num, 10, 14,
+                            profile_name=args.profile + str(rank))
 
             # load data
             data_list = list(split_and_load(data_batch, ctxs))
@@ -392,7 +411,8 @@ def train(data_train, data_eval, model):
                 mask_pred_list[0].wait_to_read()
             else:
                 nsp_metric.update(ns_label_list, ns_pred_list)
-                mlm_metric.update(mask_label_list, mask_pred_list, mask_weight_list)
+                mlm_metric.update(
+                    mask_label_list, mask_pred_list, mask_weight_list)
 
             # logging
             if step_num % (args.log_interval) == 0 and (batch_num + 1) % accumulate == 0:
@@ -420,7 +440,8 @@ def train(data_train, data_eval, model):
                 # eval data is always based on a fixed npz file.
                 dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
                                                      1, False, 1, vocab)
-                evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype)
+                evaluate(dataset_eval, model, ctxs,
+                         args.log_interval, args.dtype)
 
             batch_num += 1
 
@@ -428,13 +449,15 @@ def train(data_train, data_eval, model):
         save_parameters(step_num, model.bert, args.ckpt_dir)
     mx.nd.waitall()
 
+
 if __name__ == '__main__':
     train_begin_time = time.time()
     random_seed = random.randint(0, 1000)
 
     dataset_name, vocab = args.dataset_name, None
     if args.sentencepiece:
-        logging.info('loading vocab file from sentence piece model: %s', args.sentencepiece)
+        logging.info(
+            'loading vocab file from sentence piece model: %s', args.sentencepiece)
         if args.dataset_name:
             warnings.warn('Both --dataset_name and --sentencepiece are provided. '
                           'The vocabulary will be loaded based on --sentencepiece')
@@ -453,7 +476,8 @@ if __name__ == '__main__':
             tokenizer = nlp.data.BERTSPTokenizer(args.sentencepiece, vocab,
                                                  lower=not args.cased)
         else:
-            tokenizer = nlp.data.BERTTokenizer(vocab=vocab, lower=not args.cased)
+            tokenizer = nlp.data.BERTTokenizer(
+                vocab=vocab, lower=not args.cased)
 
         cache_dir = os.path.join(args.ckpt_dir, 'data_eval_cache')
         cache_file = os.path.join(cache_dir, 'part-000.npz')
@@ -499,7 +523,8 @@ if __name__ == '__main__':
                                         num_batch_workers=args.num_batch_workers)
         train(data_train, data_eval, model)
         train_end_time = time.time()
-        logging.info('Train cost={:.1f}s'.format(train_end_time - train_begin_time))
+        logging.info('Train cost={:.1f}s'.format(
+            train_end_time - train_begin_time))
     if data_eval:
         # eval data is always based on a fixed npz file.
         shuffle = False
