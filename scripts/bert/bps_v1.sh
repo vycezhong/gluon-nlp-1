@@ -10,15 +10,15 @@ clush --hostfile $worker_hosts "pkill python; pkill bpslaunch"
 DTYPE=float16
 MODEL=bert_12_768_12
 
-BS=128
+BS=256
 ACC=1
-LR=0.00675
-WARMUP_RATIO=0.4265
-CONST_RATIO=0.2735
-NUMSTEPS=3519
-OPTIMIZER=neslamb
+LR=0.0001
+WARMUP_RATIO=0.01
+CONST_RATIO=0
+NUMSTEPS=900000
+OPTIMIZER=bertadam
 
-MAX_SEQ_LENGTH=512
+MAX_SEQ_LENGTH=128
 MAX_PREDICTIONS_PER_SEQ=20
 SHORT_SEQ_PROB=0.1
 
@@ -55,7 +55,6 @@ python ~/repos/byteps/launcher/dist_launcher.py \
   --env BYTEPS_SERVER_ENGINE_THREAD:4 \
   --env BYTEPS_PARTITION_BYTES:4096000 \
   --env BYTEPS_LOG_LEVEL:INFO \
-  --env BYTEPS_SERVER_NUMA:46 \
   "source ~/.profile;bash -c \"bpslaunch python3 ~/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
   --data=$DATA \
   --data_eval=$DATAEVAL \
