@@ -1,6 +1,7 @@
 worker_hosts=host165
 server_hosts=host165
 ip=$(ifconfig $interface | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1')
+port=1234
 
 clush --hostfile $worker_hosts "pkill python"
 
@@ -33,7 +34,7 @@ python ~/repos/byteps/launcher/dist_launcher.py \
   -WH $worker_hosts \
   -SH $server_hosts \
   --scheduler-ip $ip \
-  --scheduler-port 1234 \
+  --scheduler-port $port \
   --interface ens3 \
   -i ~/yuchen.pem \
   --username ubuntu \
