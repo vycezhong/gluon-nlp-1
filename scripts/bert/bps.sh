@@ -1,6 +1,6 @@
 #!/bin/bash
 worker_hosts=host165
-server_hosts=host165
+server_hosts=host165-s
 interface=ens3
 ip=$(ifconfig $interface | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1')
 port=1234
