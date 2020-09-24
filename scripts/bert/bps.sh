@@ -55,7 +55,8 @@ python ~/repos/byteps/launcher/dist_launcher.py \
   --env BYTEPS_SERVER_ENGINE_THREAD:4 \
   --env BYTEPS_PARTITION_BYTES:4096000 \
   --env BYTEPS_LOG_LEVEL:INFO \
-  "source ~/.profile;bash -c \"numactl --physcpubind 46-47 bpslaunch python3 ~/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
+  --env BYTEPS_SERVER_NUMA:46 \
+  "source ~/.profile;bash -c \"bpslaunch python3 ~/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
   --data=$DATA \
   --data_eval=$DATAEVAL \
   --optimizer $OPTIMIZER \
