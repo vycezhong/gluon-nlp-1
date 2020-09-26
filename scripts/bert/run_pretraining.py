@@ -313,6 +313,7 @@ def train(data_train, data_eval, model):
         trainer = bps.DistributedTrainer(
             param_dict, args.optimizer, optim_params,
             compression_params=compression_params)
+        trainer._scale = 1
     else:
         trainer = mx.gluon.Trainer(param_dict, args.optimizer, optim_params,
                                    update_on_kvstore=False)

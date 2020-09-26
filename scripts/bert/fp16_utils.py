@@ -81,7 +81,7 @@ class FP16Trainer:
         step_size = batch_size * self._scaler.loss_scale
         if max_norm:
             _, ratio, is_finite = nlp.utils.grad_global_norm(self.fp32_trainer._params,
-                                                             self._scaler.loss_scale/batch_size)
+                                                             self._scaler.loss_scale)
             step_size = ratio * step_size
             if self._support_nan_check:
                 self.fp32_trainer.update(step_size)
