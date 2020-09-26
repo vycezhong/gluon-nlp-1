@@ -32,13 +32,13 @@ DATAEVAL=$DATA_HOME/*.dev
 
 mkdir -p $CKPTDIR
 
-cmd="python ~/repos/byteps/launcher/dist_launcher.py \
+cmd="python /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   -WH $worker_hosts \
   -SH $server_hosts \
   --scheduler-ip $ip \
   --scheduler-port $port \
   --interface $interface \
-  -i ~/yuchen.pem \
+  -i /home/ubuntu/yuchen.pem \
   --username ubuntu \
   --env NCCL_SOCKET_IFNAME:$interface \
   --env NCCL_MIN_NRINGS:1 \
@@ -55,7 +55,7 @@ cmd="python ~/repos/byteps/launcher/dist_launcher.py \
   --env BYTEPS_SERVER_ENGINE_THREAD:4 \
   --env BYTEPS_PARTITION_BYTES:4096000 \
   --env BYTEPS_LOG_LEVEL:INFO \
-  source ~/.profile; bash -c \"bpslaunch python3 ~/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
+  source ~/.profile; bpslaunch python3 /home/ubuntu/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
   --data=$DATA \
   --data_eval=$DATAEVAL \
   --optimizer $OPTIMIZER \
@@ -79,7 +79,7 @@ cmd="python ~/repos/byteps/launcher/dist_launcher.py \
   --dataset_cached \
   --num_max_dataset_cached 4 \
   --short_seq_prob $SHORT_SEQ_PROB \
-  --comm_backend byteps --log_interval $LOGINTERVAL --raw\""
+  --comm_backend byteps --log_interval $LOGINTERVAL --raw"
 
 echo $cmd
 exec $cmd & 
