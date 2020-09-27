@@ -82,4 +82,4 @@ cmd="python /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --comm_backend byteps --log_interval $LOGINTERVAL --raw\""
 
 echo $cmd
-exec $cmd & 
+exec $cmd 
