@@ -23,7 +23,7 @@ MAX_PREDICTIONS_PER_SEQ=20
 SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
-CKPTDIR=$HOME/fsx/gluon-nlp-1/ckpt_stage1_ds_lamb_96k_hvd_sz
+CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_lamb_96k_hvd_sz
 CKPTINTERVAL=100000
 
 DATA_HOME=$HOME/datasets/bert/pretrain/book-wiki-split-2k-v3
