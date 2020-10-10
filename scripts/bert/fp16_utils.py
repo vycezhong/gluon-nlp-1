@@ -84,6 +84,7 @@ class FP16Trainer:
                                                              self._scaler.loss_scale)
             step_size = ratio * step_size
             if self._support_nan_check:
+                step_size = step_size.asscalar()
                 self.fp32_trainer.update(step_size)
                 overflow = is_finite.asscalar() < 1
             else:
