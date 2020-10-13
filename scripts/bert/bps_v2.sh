@@ -10,8 +10,8 @@ clush --hostfile $worker_hosts "pkill python; pkill bpslaunch"
 DTYPE=float16
 MODEL=bert_12_768_12
 
-BS=256
-ACC=2
+BS=128
+ACC=1
 LR=0.0001
 WARMUP_RATIO=0.01
 CONST_RATIO=0
@@ -23,8 +23,8 @@ MAX_PREDICTIONS_PER_SEQ=20
 SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
-CKPTDIR=$HOME/fsx/gluon-nlp-1/ckpt_stage1_ds_lamb_96k_hvd_sz
-CKPTINTERVAL=300000000
+CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_lamb_96k_hvd_sz
+CKPTINTERVAL=100000
 
 DATA_HOME=$HOME/datasets/bert/pretrain/book-wiki-split-2k-v3
 DATA=$DATA_HOME/*.train
@@ -32,13 +32,13 @@ DATAEVAL=$DATA_HOME/*.dev
 
 mkdir -p $CKPTDIR
 
-python ~/repos/byteps/launcher/dist_launcher.py \
+cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   -WH $worker_hosts \
   -SH $server_hosts \
   --scheduler-ip $ip \
   --scheduler-port $port \
   --interface $interface \
-  -i ~/yuchen.pem \
+  -i /home/ubuntu/yuchen.pem \
   --username ubuntu \
   --env NCCL_SOCKET_IFNAME:$interface \
   --env NCCL_MIN_NRINGS:1 \
@@ -55,7 +55,7 @@ python ~/repos/byteps/launcher/dist_launcher.py \
   --env BYTEPS_SERVER_ENGINE_THREAD:4 \
   --env BYTEPS_PARTITION_BYTES:4096000 \
   --env BYTEPS_LOG_LEVEL:INFO \
-  "source ~/.profile;bash -c \"bpslaunch python3 ~/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
+  source ~/.profile; bash -c \"bpslaunch python3 /home/ubuntu/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
   --data=$DATA \
   --data_eval=$DATAEVAL \
   --optimizer $OPTIMIZER \
@@ -79,4 +79,10 @@ python ~/repos/byteps/launcher/dist_launcher.py \
   --dataset_cached \
   --num_max_dataset_cached 4 \
   --short_seq_prob $SHORT_SEQ_PROB \
+  --start_step 900000 \
+  --phase2 \
+  --phase1_num_steps 900000 \
   --comm_backend byteps --log_interval $LOGINTERVAL --raw\""
+
+echo $cmd
+exec $cmd 
