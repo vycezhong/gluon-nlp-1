@@ -28,7 +28,7 @@ DATAEVAL=$DATA_HOME/*.dev
 
 mkdir -p $CKPTDIR
 
-mpirun --allow-run-as-root -np 8 --hostfile $worker_hosts -N 8 \
+mpirun --allow-run-as-root -np 64 --hostfile $worker_hosts -N 8 \
             --mca pml ob1 --mca btl ^openib --mca btl_tcp_if_exclude docker0,lo \
             --bind-to none \
             -x NCCL_SOCKET_IFNAME=ens3 \
