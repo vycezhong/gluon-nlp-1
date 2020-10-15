@@ -5,26 +5,26 @@ interface=ens3
 ip=$(ifconfig $interface | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1')
 port=1234
 
-clush --hostfile $worker_hosts "pkill python; pkill bpslaunch"
+clush --hostfile $worker_hosts "pkill python3; pkill bpslaunch"
 
 DTYPE=float16
 MODEL=bert_12_768_12
 
-BS=256
+BS=4096
 ACC=1
-LR=0.0001
-WARMUP_RATIO=0.01
+LR=0.0025
+WARMUP_RATIO=0.025
 CONST_RATIO=0
-NUMSTEPS=900000
-OPTIMIZER=bertadam
+NUMSTEPS=112500
+OPTIMIZER=neslamb
 
 MAX_SEQ_LENGTH=128
 MAX_PREDICTIONS_PER_SEQ=20
 SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
-CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_lamb_96k_hvd_sz
-CKPTINTERVAL=100000
+CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_lamb_4k_bps_sz
+CKPTINTERVAL=10000
 
 DATA_HOME=$HOME/datasets/bert/pretrain/book-wiki-split-2k-v3
 DATA=$DATA_HOME/*.train
