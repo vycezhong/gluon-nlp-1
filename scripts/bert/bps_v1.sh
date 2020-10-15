@@ -6,6 +6,7 @@ ip=$(ifconfig $interface | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -E
 port=1234
 
 clush --hostfile $worker_hosts "pkill python3; pkill bpslaunch"
+sleep 5
 
 DTYPE=float16
 MODEL=bert_12_768_12
