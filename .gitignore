@@ -137,3 +137,4 @@ ci/rat/apache-rat.jar
 host*
 nohup.out
 sshlog/
+output_dir_3rd/
