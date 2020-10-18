@@ -4,7 +4,8 @@ Pre-training Bidirectional Encoder Representations from Transformers
 This example shows how to pre-train a BERT model with Gluon NLP Toolkit.
 @article{devlin2018bert,
   title={BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding},
-  author={Devlin, Jacob and Chang, Ming-Wei and Lee, Kenton and Toutanova, Kristina},
+  author={Devlin, Jacob and Chang, Ming- \
+      Wei and Lee, Kenton and Toutanova, Kristina},
   journal={arXiv preprint arXiv:1810.04805},
   year={2018}
 }
@@ -166,6 +167,23 @@ parser.add_argument('--comm_backend', type=str, default='device',
 parser.add_argument('--gpus', type=str, default=None,
                     help='List of gpus to run when device or dist_sync_device is used for '
                          'communication, e.g. 0 or 0,2,5. empty means using cpu.')
+# gradient compression
+parser.add_argument('--compressor', type=str, default='',
+                    help='which compressor')
+parser.add_argument('--ef', type=str, default='',
+                    help='which error-feedback')
+parser.add_argument('--compress-momentum', type=str, default='',
+                    help='which compress momentum')
+parser.add_argument('--onebit-scaling', action='store_true', default=False,
+                    help='enable scaling for onebit compressor')
+parser.add_argument('--k', default=1, type=float,
+                    help='topk or randomk')
+parser.add_argument('--partition', default='linear', type=str,
+                    help='linear or natural')
+parser.add_argument('--normalize', default='max', type=str,
+                    help='max or l2')
+parser.add_argument('--fp16-pushpull', action='store_true', default=False,
+                    help='use fp16 compression during pushpull')
 args = parser.parse_args()
 
 # logging
@@ -308,7 +326,14 @@ def train(data_train, data_eval, model):
         trainer._scale = 1
     elif backend == 'byteps':
         compression_params = {
-            "fp16": True if args.dtype == "float16" else False
+            "compressor": args.compressor,
+            "ef": args.ef,
+            "momentum": args.compress_momentum,
+            "scaling": args.onebit_scaling,
+            "k": args.k,
+            "partition": args.partition,
+            "normalize": args.normalize,
+            "seed": 2020
         }
         trainer = bps.DistributedTrainer(
             param_dict, args.optimizer, optim_params,
