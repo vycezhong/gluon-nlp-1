@@ -83,8 +83,7 @@ cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --comm_backend byteps --log_interval $LOGINTERVAL --raw \
   --compressor onebit \
   --onebit-scaling \
-  --ef vanilla \
-  --compress-momentum nesterov\""
+  --ef vanilla \""
 
 echo $cmd
 exec $cmd 
