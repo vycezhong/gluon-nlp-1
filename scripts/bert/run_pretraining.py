@@ -461,10 +461,9 @@ def train(data_train, data_eval, model):
 
             # saving checkpoints
             if step_num % args.ckpt_interval == 0 and (batch_num + 1) % accumulate == 0:
-                if is_master_node:
-                    save_states(step_num, trainer, args.ckpt_dir, local_rank)
-                    if local_rank == 0:
-                        save_parameters(step_num, model.bert, args.ckpt_dir)
+                save_states(step_num, trainer, args.ckpt_dir, local_rank)
+                if local_rank == 0:
+                    save_parameters(step_num, model.bert, args.ckpt_dir)
             if step_num % args.eval_interval == 0 and data_eval \
                     and (batch_num + 1) % accumulate == 0:
                 # eval data is always based on a fixed npz file.
@@ -475,7 +474,7 @@ def train(data_train, data_eval, model):
 
             batch_num += 1
 
-    if is_master_node and local_rank == 0:
+    if local_rank == 0:
         save_parameters(step_num, model.bert, args.ckpt_dir)
     mx.nd.waitall()
 

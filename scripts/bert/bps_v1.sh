@@ -76,7 +76,7 @@ cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --num_dataset_workers 2 \
   --num_batch_workers 1 \
   --circle_length 2 \
-  --repeat 8092 \
+  --repeat 16160 \
   --dataset_cached \
   --num_max_dataset_cached 4 \
   --short_seq_prob $SHORT_SEQ_PROB \
