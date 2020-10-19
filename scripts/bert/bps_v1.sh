@@ -80,6 +80,7 @@ cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --dataset_cached \
   --num_max_dataset_cached 4 \
   --short_seq_prob $SHORT_SEQ_PROB \
+  --start_step 50000 \
   --comm_backend byteps --log_interval $LOGINTERVAL --raw\""
 
 echo $cmd
