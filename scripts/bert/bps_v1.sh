@@ -25,7 +25,7 @@ SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
 CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_lamb_4k_bps_sz
-CKPTINTERVAL=10000
+CKPTINTERVAL=5000
 
 DATA_HOME=$HOME/datasets/bert/pretrain/book-wiki-split-2k-v3
 DATA=$DATA_HOME/*.train
@@ -76,7 +76,7 @@ cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --num_dataset_workers 2 \
   --num_batch_workers 1 \
   --circle_length 2 \
-  --repeat 16160 \
+  --repeat 8 \
   --dataset_cached \
   --num_max_dataset_cached 4 \
   --short_seq_prob $SHORT_SEQ_PROB \
