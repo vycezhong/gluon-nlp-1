@@ -11,19 +11,19 @@ DTYPE=float16
 MODEL=bert_12_768_12
 
 BS=4096
-ACC=1
+ACC=4
 LR=0.0025
 WARMUP_RATIO=0.025
 CONST_RATIO=0
-NUMSTEPS=112500
+NUMSTEPS=12500
 OPTIMIZER=neslamb
 
-MAX_SEQ_LENGTH=128
-MAX_PREDICTIONS_PER_SEQ=20
+MAX_SEQ_LENGTH=512
+MAX_PREDICTIONS_PER_SEQ=80
 SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
-CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_lamb_96k_hvd_sz
+CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_lamb_4k_bps_sz
 CKPTINTERVAL=100000
 
 DATA_HOME=$HOME/datasets/bert/pretrain/book-wiki-split-2k-v3
@@ -53,7 +53,7 @@ cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --env BYTEPS_NUMA_ON:1 \
   --env NVIDIA_VISIBLE_DEVICES:0,1,2,3,4,5,6,7 \
   --env BYTEPS_SERVER_ENGINE_THREAD:4 \
-  --env BYTEPS_PARTITION_BYTES:4096000 \
+  --env BYTEPS_PARTITION_BYTES:1024000 \
   --env BYTEPS_LOG_LEVEL:INFO \
   source ~/.profile; bash -c \"bpslaunch python3 /home/ubuntu/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
   --data=$DATA \
@@ -75,13 +75,13 @@ cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --num_dataset_workers 2 \
   --num_batch_workers 1 \
   --circle_length 2 \
-  --repeat 8092 \
+  --repeat 8 \
   --dataset_cached \
   --num_max_dataset_cached 4 \
   --short_seq_prob $SHORT_SEQ_PROB \
-  --start_step 900000 \
+  --start_step 112500 \
   --phase2 \
-  --phase1_num_steps 900000 \
+  --phase1_num_steps 112500 \
   --comm_backend byteps --log_interval $LOGINTERVAL --raw\""
 
 echo $cmd
