@@ -24,7 +24,7 @@ MAX_PREDICTIONS_PER_SEQ=20
 SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
-CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_lamb_4k_bps_sz
+CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_neslamb_1bit_4k_bps_sz
 CKPTINTERVAL=5000
 
 DATA_HOME=$HOME/datasets/bert/pretrain/book-wiki-split-2k-v3
@@ -80,7 +80,9 @@ cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --dataset_cached \
   --num_max_dataset_cached 4 \
   --short_seq_prob $SHORT_SEQ_PROB \
-  --start_step 85000 \
+  --compressor onebit \
+  --onebit-scaling \
+  --ef vanilla \
   --comm_backend byteps --log_interval $LOGINTERVAL --raw\""
 
 echo $cmd
