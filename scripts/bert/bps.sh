@@ -16,7 +16,7 @@ LR=0.0001
 WARMUP_RATIO=0.01
 CONST_RATIO=0
 NUMSTEPS=900000
-OPTIMIZER=neslamb
+OPTIMIZER=bertadam
 
 MAX_SEQ_LENGTH=128
 MAX_PREDICTIONS_PER_SEQ=20
@@ -48,12 +48,12 @@ python3 ~/repos/byteps/launcher/dist_launcher.py \
   --env NCCL_TREE_THRESHOLD:4294967296 \
   --env OMP_WAIT_POLICY:PASSIVE \
   --env OMP_NUM_THREADS:4 \
-  --env BYTEPS_THREADPOOL_SIZE:0 \
+  --env BYTEPS_THREADPOOL_SIZE:16 \
   --env BYTEPS_MIN_COMPRESS_BYTES:1024000 \
   --env BYTEPS_NUMA_ON:1 \
   --env NVIDIA_VISIBLE_DEVICES:0,1,2,3,4,5,6,7 \
   --env BYTEPS_SERVER_ENGINE_THREAD:4 \
-  --env BYTEPS_PARTITION_BYTES:4096000 \
+  --env BYTEPS_PARTITION_BYTES:1024000 \
   --env BYTEPS_LOG_LEVEL:INFO \
   --env BYTEPS_FORCE_DISTRIBUTED:1 \
   "source ~/.profile;bash -c \"bpslaunch python3 ~/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
@@ -76,8 +76,10 @@ python3 ~/repos/byteps/launcher/dist_launcher.py \
   --num_dataset_workers 2 \
   --num_batch_workers 1 \
   --circle_length 2 \
-  --repeat 16160 \
+  --repeat 8 \
   --dataset_cached \
   --num_max_dataset_cached 4 \
   --short_seq_prob $SHORT_SEQ_PROB \
+  --compressor onebit \
+  --onebit-scaling \
   --comm_backend byteps --log_interval $LOGINTERVAL --raw\""
