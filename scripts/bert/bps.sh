@@ -24,7 +24,7 @@ SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
 CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_neslamb_256_bps_sz
-CKPTINTERVAL=300000000
+CKPTINTERVAL=100000
 
 DATA_HOME=$HOME/datasets/bert/pretrain/book-wiki-split-2k-v3
 DATA=$DATA_HOME/*.train
