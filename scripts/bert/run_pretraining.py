@@ -481,7 +481,7 @@ def train(data_train, data_eval, model):
 
 if __name__ == '__main__':
     train_begin_time = time.time()
-    random_seed = random.randint(0, 1000)
+    random_seed = 2020
 
     dataset_name, vocab = args.dataset_name, None
     if args.sentencepiece:
