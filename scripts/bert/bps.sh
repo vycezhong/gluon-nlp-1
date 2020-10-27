@@ -82,4 +82,5 @@ python3 ~/repos/byteps/launcher/dist_launcher.py \
   --short_seq_prob $SHORT_SEQ_PROB \
   --compressor onebit \
   --onebit-scaling \
+  --ef vanilla \
   --comm_backend byteps --log_interval $LOGINTERVAL --raw\""
