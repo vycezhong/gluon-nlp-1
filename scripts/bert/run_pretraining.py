@@ -406,12 +406,11 @@ def train(data_train, data_eval, model):
                     profile(step_num, 10, 14,
                             profile_name=args.profile + str(rank))
 
-            for i, t in enumerate(data_batch):
+            for i, _ in enumerate(data_batch):
                 with open("%d-%d.npz" % (step_num, i), "rb") as f:
                     data_np = np.load(f)
-                    print(len(data_batch))
-                    print(data_batch[0].shape, t.shape)
-                    t[:] = data_np
+                    data_mx = mx.nd.array(data_np)
+                    data_batch[i] = data_mx
 
             # load data
             data_list = list(split_and_load(data_batch, ctxs))
