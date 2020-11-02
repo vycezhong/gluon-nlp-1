@@ -410,6 +410,8 @@ def train(data_train, data_eval, model):
                 with open("%d-%d.npz" % (step_num, i), "rb") as f:
                     data_np = np.load(f)
                     data_mx = mx.nd.array(data_np)
+                    print(type(data_batch[i]))
+                    print(type(data_batch))
                     data_batch[i] = data_mx
 
             # load data
