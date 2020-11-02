@@ -34,6 +34,7 @@ __all__ = ['get_model_loss', 'get_pretrain_data_npz', 'get_dummy_dataloader',
            'save_parameters', 'save_states', 'evaluate', 'split_and_load',
            'get_pretrain_data_text', 'generate_dev_set', 'profile']
 
+
 def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
                    ckpt_dir=None, start_step=None):
     """Get model for pre-training.
@@ -69,16 +70,18 @@ def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
     # model
     model, vocabulary = nlp.model.get_model(model, dataset_name=dataset_name, vocab=vocab,
                                             pretrained=pretrained, ctx=ctx,
-                                            hparam_allow_override=True)
+                                            hparam_allow_override=True,
+                                            dropout=0)
 
     if not pretrained:
         model.initialize(init=mx.init.Normal(0.02), ctx=ctx)
     model.cast(dtype)
 
     if ckpt_dir and start_step:
-        param_path = os.path.join(ckpt_dir, '%07d.params'%start_step)
+        param_path = os.path.join(ckpt_dir, '%07d.params' % start_step)
         nlp.utils.load_parameters(model, param_path, ctx=ctx, cast_dtype=True)
-        logging.info('Loading step %d checkpoints from %s.', start_step, param_path)
+        logging.info('Loading step %d checkpoints from %s.',
+                     start_step, param_path)
 
     model.hybridize(static_alloc=True, static_shape=True)
 
@@ -126,10 +129,10 @@ def prepare_pretrain_bucket_sampler(dataset, batch_size, shuffle=False,
     if isinstance(dataset, nlp.data.NumpyDataset):
         lengths = dataset.get_field('valid_lengths')
     else:
-        lengths = dataset.transform(lambda input_ids, segment_ids, masked_lm_positions, \
-                                           masked_lm_ids, masked_lm_weights, \
-                                           next_sentence_labels, valid_lengths: \
-                                        valid_lengths, lazy=False)
+        lengths = dataset.transform(lambda input_ids, segment_ids, masked_lm_positions,
+                                    masked_lm_ids, masked_lm_weights,
+                                    next_sentence_labels, valid_lengths:
+                                    valid_lengths, lazy=False)
     # calculate total batch size for all GPUs
     batch_size = batch_size * num_ctxes
     sampler = nlp.data.FixedBucketSampler(lengths,
@@ -198,10 +201,11 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
     logging.info('%d files are found.', num_files)
     assert num_files >= num_parts, \
         'The number of text files must be no less than the number of ' \
-        'workers/partitions (%d). Only %d files at %s are found.'%(num_parts, num_files, data)
+        'workers/partitions (%d). Only %d files at %s are found.' % (
+            num_parts, num_files, data)
     dataset_params = {'tokenizer': tokenizer, 'max_seq_length': max_seq_length,
                       'short_seq_prob': short_seq_prob, 'masked_lm_prob': masked_lm_prob,
-                      'max_predictions_per_seq': max_predictions_per_seq, 'vocab':vocab,
+                      'max_predictions_per_seq': max_predictions_per_seq, 'vocab': vocab,
                       'whole_word_mask': whole_word_mask}
     sampler_params = {'batch_size': batch_size, 'shuffle': shuffle,
                       'num_ctxes': num_ctxes, 'num_buckets': num_buckets}
@@ -279,7 +283,8 @@ def get_pretrain_data_npz(data, batch_size, num_ctxes,
     logging.info('%d files are found.', num_files)
     assert num_files >= num_parts, \
         'The number of text files must be no less than the number of ' \
-        'workers/partitions (%d). Only %d files at %s are found.'%(num_parts, num_files, data)
+        'workers/partitions (%d). Only %d files at %s are found.' % (
+            num_parts, num_files, data)
     dataset_params = {'allow_pickle': True}
     sampler_params = {'batch_size': batch_size, 'shuffle': shuffle,
                       'num_ctxes': num_ctxes, 'num_buckets': num_buckets}
@@ -333,15 +338,19 @@ def get_dummy_dataloader(batch_size, seq_len, max_predict):
 
 def save_parameters(step_num, model, ckpt_dir):
     """Save the model parameter, marked by step_num."""
-    param_path = os.path.join(ckpt_dir, '%07d.params'%step_num)
+    param_path = os.path.join(ckpt_dir, '%07d.params' % step_num)
     logging.info('[step %d] Saving model params to %s.', step_num, param_path)
     nlp.utils.save_parameters(model, param_path)
 
+
 def save_states(step_num, trainer, ckpt_dir, local_rank=0):
     """Save the trainer states, marked by step_num."""
-    trainer_path = os.path.join(ckpt_dir, '%07d.states.%02d'%(step_num, local_rank))
-    logging.info('[step %d] Saving trainer states to %s.', step_num, trainer_path)
+    trainer_path = os.path.join(
+        ckpt_dir, '%07d.states.%02d' % (step_num, local_rank))
+    logging.info('[step %d] Saving trainer states to %s.',
+                 step_num, trainer_path)
     nlp.utils.save_states(trainer, trainer_path)
+
 
 def log_noacc(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss, step_num,
               trainer, log_interval):
@@ -357,6 +366,7 @@ def log_noacc(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss, s
                  .format(step_num, running_mlm_loss.asscalar(), running_nsp_loss.asscalar(),
                          throughput.asscalar(), lr, duration, duration*1000/log_interval))
     # pylint: enable=line-too-long
+
 
 def log(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss, step_num,
         mlm_metric, nsp_metric, trainer, log_interval):
@@ -378,7 +388,8 @@ def split_and_load(arrs, ctx):
     """split and load arrays to a list of contexts"""
     assert isinstance(arrs, (list, tuple))
     # split and load
-    loaded_arrs = [mx.gluon.utils.split_and_load(arr, ctx, even_split=False) for arr in arrs]
+    loaded_arrs = [mx.gluon.utils.split_and_load(
+        arr, ctx, even_split=False) for arr in arrs]
     return zip(*loaded_arrs)
 
 
@@ -412,11 +423,13 @@ class BERTForPretrain(mx.gluon.Block):
         num_masks = masked_weight.sum() + 1e-8
         valid_length = valid_length.reshape(-1)
         masked_id = masked_id.reshape(-1)
-        _, _, classified, decoded = self.bert(input_id, segment_id, valid_length, masked_position)
+        _, _, classified, decoded = self.bert(
+            input_id, segment_id, valid_length, masked_position)
         decoded = decoded.reshape((-1, self._vocab_size))
         ls1 = self.mlm_loss(decoded.astype('float32', copy=False),
                             masked_id, masked_weight.reshape((-1, 1)))
-        ls2 = self.nsp_loss(classified.astype('float32', copy=False), next_sentence_label)
+        ls2 = self.nsp_loss(classified.astype(
+            'float32', copy=False), next_sentence_label)
         ls1 = ls1.sum() / num_masks
         ls2 = ls2.mean()
         return classified, decoded, ls1, ls2
@@ -443,10 +456,10 @@ def evaluate(data_eval, model, ctx, log_interval, dtype):
         ns_label_list, ns_pred_list = [], []
         mask_label_list, mask_pred_list, mask_weight_list = [], [], []
         for data in data_list:
-            (input_id, masked_id, masked_position, masked_weight, \
+            (input_id, masked_id, masked_position, masked_weight,
              next_sentence_label, segment_id, valid_length) = data
             valid_length = valid_length.astype(dtype, copy=False)
-            out = model(input_id, masked_id, masked_position, masked_weight, \
+            out = model(input_id, masked_id, masked_position, masked_weight,
                         next_sentence_label, segment_id, valid_length)
             classified, decoded, ls1, ls2 = out
             masked_id = masked_id.reshape(-1)
@@ -498,8 +511,10 @@ def generate_dev_set(tokenizer, vocab, cache_file, args):
     eval_files = nlp.utils.glob(args.data_eval)
     num_files = len(eval_files)
     assert num_files > 0, 'Number of eval files must be greater than 0.' \
-                          'Only found %d files at %s'%(num_files, args.data_eval)
-    logging.info('Generating validation set from %d files on rank 0.', len(eval_files))
+                          'Only found %d files at %s' % (
+                              num_files, args.data_eval)
+    logging.info(
+        'Generating validation set from %d files on rank 0.', len(eval_files))
     create_training_instances((eval_files, tokenizer, args.max_seq_length,
                                args.short_seq_prob, args.masked_lm_prob,
                                args.max_predictions_per_seq,
@@ -507,6 +522,7 @@ def generate_dev_set(tokenizer, vocab, cache_file, args):
                                1, args.num_dataset_workers,
                                worker_pool, cache_file))
     logging.info('Done generating validation set on rank 0.')
+
 
 def profile(curr_step, start_step, end_step, profile_name='profile.json',
             early_exit=True):

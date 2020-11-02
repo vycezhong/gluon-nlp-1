@@ -39,6 +39,7 @@ import functools
 import time
 import argparse
 
+import numpy as np
 import mxnet as mx
 import gluonnlp as nlp
 try:
@@ -407,6 +408,9 @@ def train(data_train, data_eval, model):
 
             # load data
             data_list = list(split_and_load(data_batch, ctxs))
+            with open("%d.npz" % step_num, "wb") as f:
+                data_np = data_batch.asnumpy()
+                np.save(f, data_np)
 
             ns_label_list, ns_pred_list = [], []
             mask_label_list, mask_pred_list, mask_weight_list = [], [], []

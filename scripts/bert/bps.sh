@@ -83,4 +83,5 @@ python3 ~/repos/byteps/launcher/dist_launcher.py \
   --compressor onebit \
   --onebit-scaling \
   --ef vanilla \
+  --pretrained \
   --comm_backend byteps --log_interval $LOGINTERVAL --raw\""
