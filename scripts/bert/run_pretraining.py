@@ -409,7 +409,7 @@ def train(data_train, data_eval, model):
             for i, t in enumerate(data_batch):
                 with open("%d-%d.npz" % (step_num, i), "rb") as f:
                     data_np = np.load(f)
-                    data_batch[i] = data_np
+                    t[:] = data_np
 
             # load data
             data_list = list(split_and_load(data_batch, ctxs))
