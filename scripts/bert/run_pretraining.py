@@ -415,7 +415,10 @@ def train(data_train, data_eval, model):
                     try:
                         data_batch[i] = data_mx
                     except Exception as e:
+                        print("error")
                         print(type(data_batch[i]))
+                        print(type(data_np))
+                        print(type(data_mx))
                         print(e)
                         exit(1)
 
