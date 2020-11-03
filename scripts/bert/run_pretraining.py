@@ -412,7 +412,12 @@ def train(data_train, data_eval, model):
                     data_mx = mx.nd.array(data_np)
                     print(type(data_batch[i]))
                     print(type(data_batch))
-                    data_batch[i] = data_mx
+                    try:
+                        data_batch[i] = data_mx
+                    except Exception as e:
+                        print(type(data_batch[i]))
+                        print(e)
+                        exit(1)
 
             # load data
             data_list = list(split_and_load(data_batch, ctxs))
