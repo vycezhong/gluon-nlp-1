@@ -406,21 +406,14 @@ def train(data_train, data_eval, model):
                     profile(step_num, 10, 14,
                             profile_name=args.profile + str(rank))
 
+            load_data_batch = []
             for i, _ in enumerate(data_batch):
                 with open("%d-%d.npz" % (step_num, i), "rb") as f:
                     data_np = np.load(f)
                     data_mx = mx.nd.array(data_np)
-                    print(type(data_batch[i]))
-                    print(type(data_batch))
-                    try:
-                        data_batch[i] = data_mx
-                    except Exception as e:
-                        print("error")
-                        print(type(data_batch[i]))
-                        print(type(data_np))
-                        print(type(data_mx))
-                        print(e)
-                        exit(1)
+                    load_data_batch.append(data_mx)
+
+            load_data_batch = tuple(load_data_batch)
 
             # load data
             data_list = list(split_and_load(data_batch, ctxs))
