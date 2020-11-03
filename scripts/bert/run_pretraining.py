@@ -413,7 +413,7 @@ def train(data_train, data_eval, model):
                     data_mx = mx.nd.array(data_np)
                     load_data_batch.append(data_mx)
 
-            load_data_batch = tuple(load_data_batch)
+            data_batch = tuple(load_data_batch)
 
             # load data
             data_list = list(split_and_load(data_batch, ctxs))
