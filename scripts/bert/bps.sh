@@ -80,7 +80,7 @@ python3 ~/repos/byteps/launcher/dist_launcher.py \
   --dataset_cached \
   --num_max_dataset_cached 4 \
   --short_seq_prob $SHORT_SEQ_PROB \
-  --compressor onebit \
-  --onebit-scaling \
+  --compressor topk \
   --ef vanilla \
+  --k 0.001 \
   --comm_backend byteps --log_interval $LOGINTERVAL --raw\""
