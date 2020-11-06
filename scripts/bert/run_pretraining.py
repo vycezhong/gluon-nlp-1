@@ -449,12 +449,16 @@ def train(data_train, data_eval, model):
             # logging
             if step_num % (args.log_interval) == 0 and (batch_num + 1) % accumulate == 0:
                 # average loss and accu
-                acc = mx.nd.array(
-                    [running_mlm_loss, running_nsp_loss, mlm_metric, nsp_metric], ctx=ctxs[0])
+                acc = mx.nd.array([running_mlm_loss.asscalar(),
+                                   running_nsp_loss.asscalar(),
+                                   mlm_metric.get()[1],
+                                   nsp_metric.get()[1],
+                                   running_num_tks.asscalar()
+                                   ], ctx=ctxs[0])
                 bps.byteps_push_pull(acc, name="acc", is_average=False)
                 acc /= bps.size()
-                running_mlm_loss, running_nsp_loss, mlm_metric, nsp_metric = acc[0].asscalar(
-                ), acc[1].asscalar(), acc[2].asscalar(), acc[3].asscalar()
+                running_mlm_loss, running_nsp_loss, mlm_metric_val, nsp_metric_val, running_num_tks = acc[0].asscalar(
+                ), acc[1].asscalar(), acc[2].asscalar(), acc[3].asscalar(), acc[4].asscalar()
 
                 if args.no_compute_acc:
                     log_noacc(begin_time, running_num_tks, running_mlm_loss / accumulate,
@@ -462,7 +466,7 @@ def train(data_train, data_eval, model):
                               trainer, args.log_interval)
                 else:
                     log(begin_time, running_num_tks, running_mlm_loss / accumulate,
-                        running_nsp_loss / accumulate, step_num, mlm_metric, nsp_metric,
+                        running_nsp_loss / accumulate, step_num, mlm_metric_val, nsp_metric_val,
                         trainer, args.log_interval)
                     mlm_metric.reset_local()
                     nsp_metric.reset_local()
