@@ -379,6 +379,8 @@ def train(data_train, data_eval, model):
     num_wc_steps = num_warmup_steps + num_const_steps
     num_recur_steps = int(num_const_steps / 5)
 
+    if backend == "bpteps":
+        bps.byteps_declare_tensor("acc")
     while step_num < num_train_steps:
 
         data_train_iter = iter(data_train)
@@ -446,6 +448,14 @@ def train(data_train, data_eval, model):
 
             # logging
             if step_num % (args.log_interval) == 0 and (batch_num + 1) % accumulate == 0:
+                # average loss and accu
+                acc = mx.nd.array(
+                    [running_mlm_loss, running_nsp_loss, mlm_metric, nsp_metric], ctx=ctxs[0])
+                bps.byteps_push_pull(acc, name="acc", is_average=False)
+                acc /= bps.size()
+                running_mlm_loss, running_nsp_loss, mlm_metric, nsp_metric = acc[0].asscalar(
+                ), acc[1].asscalar(), acc[2].asscalar(), acc[3].asscalar()
+
                 if args.no_compute_acc:
                     log_noacc(begin_time, running_num_tks, running_mlm_loss / accumulate,
                               running_nsp_loss / accumulate, step_num,

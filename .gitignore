@@ -138,3 +138,4 @@ host*
 nohup.out
 sshlog/
 output_dir_3rd/
+logs/
