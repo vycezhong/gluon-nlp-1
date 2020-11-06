@@ -379,7 +379,7 @@ def train(data_train, data_eval, model):
     num_wc_steps = num_warmup_steps + num_const_steps
     num_recur_steps = int(num_const_steps / 5)
 
-    if backend == "bpteps":
+    if backend == "byteps":
         bps.byteps_declare_tensor("acc")
     while step_num < num_train_steps:
 
