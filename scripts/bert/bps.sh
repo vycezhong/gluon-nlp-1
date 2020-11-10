@@ -10,10 +10,10 @@ clush --hostfile $worker_hosts "pkill python3; pkill bpslaunch"
 DTYPE=float16
 MODEL=bert_12_768_12
 
-BS=256
+BS=512
 ACC=1
-LR=0.0001
-WARMUP_RATIO=0.01
+LR=0.000625
+WARMUP_RATIO=0.003125
 CONST_RATIO=0
 NUMSTEPS=900000
 OPTIMIZER=bertadam
