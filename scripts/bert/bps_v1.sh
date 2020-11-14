@@ -17,14 +17,14 @@ LR=0.001768
 WARMUP_RATIO=0.025
 CONST_RATIO=0
 NUMSTEPS=112500
-OPTIMIZER=neslamb
+OPTIMIZER=lamb
 
 MAX_SEQ_LENGTH=128
 MAX_PREDICTIONS_PER_SEQ=20
 SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
-CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_neslamb_1bit_4k_bps_sz
+CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_lamb_4k_bps_sz
 CKPTINTERVAL=5000
 
 DATA_HOME=$HOME/datasets/bert/pretrain/book-wiki-split-2k-v3
@@ -49,7 +49,7 @@ cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --env NCCL_TREE_THRESHOLD:4294967296 \
   --env OMP_WAIT_POLICY:PASSIVE \
   --env OMP_NUM_THREADS:4 \
-  --env BYTEPS_THREADPOOL_SIZE:16 \
+  --env BYTEPS_THREADPOOL_SIZE:0 \
   --env BYTEPS_MIN_COMPRESS_BYTES:1024000 \
   --env BYTEPS_NUMA_ON:1 \
   --env NVIDIA_VISIBLE_DEVICES:0,1,2,3,4,5,6,7 \
@@ -80,9 +80,6 @@ cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --dataset_cached \
   --num_max_dataset_cached 4 \
   --short_seq_prob $SHORT_SEQ_PROB \
-  --compressor onebit \
-  --onebit-scaling \
-  --ef vanilla \
   --comm_backend byteps --log_interval $LOGINTERVAL --raw\""
 
 echo $cmd
