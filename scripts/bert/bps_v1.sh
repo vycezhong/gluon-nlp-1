@@ -50,11 +50,11 @@ cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --env OMP_WAIT_POLICY:PASSIVE \
   --env OMP_NUM_THREADS:4 \
   --env BYTEPS_THREADPOOL_SIZE:16 \
-  --env BYTEPS_MIN_COMPRESS_BYTES:0 \
+  --env BYTEPS_MIN_COMPRESS_BYTES:1024000 \
   --env BYTEPS_NUMA_ON:1 \
   --env NVIDIA_VISIBLE_DEVICES:0,1,2,3,4,5,6,7 \
   --env BYTEPS_SERVER_ENGINE_THREAD:4 \
-  --env BYTEPS_PARTITION_BYTES:4096000 \
+  --env BYTEPS_PARTITION_BYTES:1024000 \
   --env BYTEPS_LOG_LEVEL:INFO \
   source ~/.profile; bash -c \"bpslaunch python3 /home/ubuntu/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
   --data=$DATA \
