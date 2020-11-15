@@ -336,7 +336,7 @@ def train(data_train, data_eval, model):
             "seed": 2020
         }
         if args.optimizer == "lamb" and args.compressor:
-            optim_params["bias_correction"] = True
+            optim_params["bias_correction"] = False
         trainer = bps.DistributedTrainer(
             param_dict, args.optimizer, optim_params,
             compression_params=compression_params)
