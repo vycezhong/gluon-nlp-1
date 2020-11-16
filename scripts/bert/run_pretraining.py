@@ -347,6 +347,12 @@ def train(data_train, data_eval, model):
     fp16_trainer = FP16Trainer(trainer, dynamic_loss_scale=dynamic_loss_scale,
                                loss_scaler_params=loss_scale_param)
 
+    if args.start_step:
+        state_path = os.path.join(
+            args.ckpt_dir, '%07d.states.%02d' % (args.start_step, local_rank))
+        logging.info('Loading trainer state from %s', state_path)
+        nlp.utils.load_states(trainer, state_path)
+
     accumulate = args.accumulate
     num_train_steps = args.num_steps
     warmup_ratio = args.warmup_ratio
