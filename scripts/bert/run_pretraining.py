@@ -307,7 +307,7 @@ def train(data_train, data_eval, model):
     lr = args.lr
     param_idx2name = {}
     param_idx2name.update(enumerate(model.collect_params().keys()))
-    optim_params = {'learning_rate': lr, 'epsilon': 1e-4, 'wd': 0.01}
+    optim_params = {'learning_rate': lr, 'epsilon': 1e-6, 'wd': 0.01}
     optim_params['param_idx2name'] = param_idx2name
     if args.dtype == 'float16':
         optim_params['multi_precision'] = True
