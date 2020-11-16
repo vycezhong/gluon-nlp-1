@@ -24,7 +24,7 @@ MAX_PREDICTIONS_PER_SEQ=20
 SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
-CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_bertadam_dithering_4k_bps_sz
+CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_bertadam_dithering2_4k_bps_sz
 CKPTINTERVAL=5000
 
 DATA_HOME=$HOME/datasets/bert/pretrain/book-wiki-split-2k-v3
