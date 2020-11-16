@@ -49,7 +49,7 @@ cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --env NCCL_TREE_THRESHOLD:4294967296 \
   --env OMP_WAIT_POLICY:PASSIVE \
   --env OMP_NUM_THREADS:4 \
-  --env BYTEPS_THREADPOOL_SIZE:16 \
+  --env BYTEPS_THREADPOOL_SIZE:0 \
   --env BYTEPS_MIN_COMPRESS_BYTES:1024000 \
   --env BYTEPS_NUMA_ON:1 \
   --env NVIDIA_VISIBLE_DEVICES:0,1,2,3,4,5,6,7 \
