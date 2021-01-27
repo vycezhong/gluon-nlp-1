@@ -13,11 +13,11 @@ MODEL=bert_12_768_12
 
 BS=4096
 ACC=1
-LR=0.001768
+LR=0.0014865
 WARMUP_RATIO=0.025
 CONST_RATIO=0
 NUMSTEPS=112500
-OPTIMIZER=lamb
+OPTIMIZER=neslamb
 
 MAX_SEQ_LENGTH=128
 MAX_PREDICTIONS_PER_SEQ=20
@@ -56,10 +56,6 @@ cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --env BYTEPS_SERVER_ENGINE_THREAD:4 \
   --env BYTEPS_PARTITION_BYTES:4096000 \
   --env BYTEPS_LOG_LEVEL:INFO \
-  --env BYTEPS_TRACE_ON:1 \
-  --env BYTEPS_TRACE_START_STEP:100 \
-  --env BYTEPS_TRACE_END_STEP:110 \
-  --env BYTEPS_TRACE_DIR:./traces \
   source ~/.profile; bash -c \"bpslaunch python3 /home/ubuntu/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
   --data=$DATA \
   --data_eval=$DATAEVAL \
