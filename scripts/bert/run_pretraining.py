@@ -30,7 +30,6 @@ This example shows how to pre-train a BERT model with Gluon NLP Toolkit.
 # pylint:disable=redefined-outer-name,logging-format-interpolation
 
 import os
-from scripts.bert.pretraining_utils import remove_parameters, remove_states
 import sys
 import math
 import random
@@ -55,7 +54,7 @@ except ImportError:
 from fp16_utils import FP16Trainer
 from pretraining_utils import get_model_loss, get_pretrain_data_npz, get_dummy_dataloader
 from pretraining_utils import split_and_load, log, log_noacc, evaluate
-from pretraining_utils import save_parameters, save_states, profile
+from pretraining_utils import save_parameters, save_states, profile, remove_parameters, remove_states
 from pretraining_utils import get_pretrain_data_text, generate_dev_set
 
 # parser
@@ -391,7 +390,7 @@ def train(data_train, data_eval, model):
     num_const_steps = int(num_train_steps * args.const_ratio)
     num_wc_steps = num_warmup_steps + num_const_steps
     num_recur_steps = int(num_const_steps / 5)
-    
+
     most_recent_ckpts_paths = []
 
     if backend == "byteps":
@@ -499,7 +498,8 @@ def train(data_train, data_eval, model):
                         0)
                     if local_rank == 0:
                         remove_parameters(ckpt_to_be_removed, args.ckpt_dir)
-                    remove_states(ckpt_to_be_removed, args.ckpt_dir, local_rank)
+                    remove_states(ckpt_to_be_removed,
+                                  args.ckpt_dir, local_rank)
             # if step_num % args.eval_interval == 0 and data_eval \
             #         and (batch_num + 1) % accumulate == 0:
             #     # eval data is always based on a fixed npz file.
