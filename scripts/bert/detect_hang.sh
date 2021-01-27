@@ -1,7 +1,7 @@
 #!/bin/bash
 
 i=0
-while true; then 
+while true; do 
     var=`nvidia-smi --query-gpu=utilization.gpu --format=csv | grep -Eo '[+-]?[0-9]+([.][0-9]+)?' `
     var=$(echo $var)
     var=$((${var// /+}))
