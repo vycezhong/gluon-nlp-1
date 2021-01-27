@@ -25,7 +25,7 @@ SHORT_SEQ_PROB=0.1
 
 LOGINTERVAL=10
 CKPTDIR=$HOME/checkpoints/gluon-nlp-1/ckpt_stage1_ds_lans_topkef_4k_bps_sz
-CKPTINTERVAL=5000
+CKPTINTERVAL=1000
 
 DATA_HOME=$HOME/datasets/bert/pretrain/book-wiki-split-2k-v3
 DATA=$DATA_HOME/*.train
@@ -83,6 +83,7 @@ cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --compressor topk \
   --k 0.001 \
   --ef vanilla \
+  --resume_from_checkpoint \
   --comm_backend byteps --log_interval $LOGINTERVAL --raw\""
 
 echo $cmd
