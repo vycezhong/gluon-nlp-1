@@ -30,6 +30,7 @@ This example shows how to pre-train a BERT model with Gluon NLP Toolkit.
 # pylint:disable=redefined-outer-name,logging-format-interpolation
 
 import os
+from scripts.bert.pretraining_utils import remove_parameters, remove_states
 import sys
 import math
 import random
@@ -167,6 +168,10 @@ parser.add_argument('--comm_backend', type=str, default='device',
 parser.add_argument('--gpus', type=str, default=None,
                     help='List of gpus to run when device or dist_sync_device is used for '
                          'communication, e.g. 0 or 0,2,5. empty means using cpu.')
+parser.add_argument("--resume_from_checkpoint",
+                    default=False,
+                    action='store_true',
+                    help="Whether to resume training from checkpoint.")
 # gradient compression
 parser.add_argument('--compressor', type=str, default='',
                     help='which compressor')
@@ -386,6 +391,8 @@ def train(data_train, data_eval, model):
     num_const_steps = int(num_train_steps * args.const_ratio)
     num_wc_steps = num_warmup_steps + num_const_steps
     num_recur_steps = int(num_const_steps / 5)
+    
+    most_recent_ckpts_paths = []
 
     if backend == "byteps":
         bps.byteps_declare_tensor("acc")
@@ -486,6 +493,13 @@ def train(data_train, data_eval, model):
                 save_states(step_num, trainer, args.ckpt_dir, local_rank)
                 if local_rank == 0:
                     save_parameters(step_num, model.bert, args.ckpt_dir)
+                most_recent_ckpts_paths.append(step_num)
+                if len(most_recent_ckpts_paths) > 3:
+                    ckpt_to_be_removed = most_recent_ckpts_paths.pop(
+                        0)
+                    if local_rank == 0:
+                        remove_parameters(ckpt_to_be_removed, args.ckpt_dir)
+                    remove_states(ckpt_to_be_removed, args.ckpt_dir, local_rank)
             # if step_num % args.eval_interval == 0 and data_eval \
             #         and (batch_num + 1) % accumulate == 0:
             #     # eval data is always based on a fixed npz file.
@@ -514,6 +528,13 @@ if __name__ == '__main__':
                           'The vocabulary will be loaded based on --sentencepiece')
             dataset_name = None
         vocab = nlp.vocab.BERTVocab.from_sentencepiece(args.sentencepiece)
+
+    if args.resume_from_checkpoint:
+        model_names = [f for f in os.listdir(
+            args.ckpt_dir) if f.endswith(".params")]
+        if model_names:
+            args.start_step = max(
+                [int(x.split('.params')[0].strip()) for x in model_names])
 
     model, vocab = get_model_loss(ctxs, args.model, args.pretrained,
                                   dataset_name, vocab, args.dtype,

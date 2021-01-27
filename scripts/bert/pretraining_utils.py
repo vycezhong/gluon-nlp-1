@@ -342,6 +342,12 @@ def save_parameters(step_num, model, ckpt_dir):
     nlp.utils.save_parameters(model, param_path)
 
 
+def remove_parameters(step_num, ckpt_dir):
+    """Save the model parameter, marked by step_num."""
+    param_path = os.path.join(ckpt_dir, '%07d.params' % step_num)
+    os.remove(param_path)
+
+
 def save_states(step_num, trainer, ckpt_dir, local_rank=0):
     """Save the trainer states, marked by step_num."""
     trainer_path = os.path.join(
@@ -349,6 +355,13 @@ def save_states(step_num, trainer, ckpt_dir, local_rank=0):
     logging.info('[step %d] Saving trainer states to %s.',
                  step_num, trainer_path)
     nlp.utils.save_states(trainer, trainer_path)
+
+
+def remove_states(step_num, ckpt_dir, local_rank=0):
+    """Save the trainer states, marked by step_num."""
+    trainer_path = os.path.join(
+        ckpt_dir, '%07d.states.%02d' % (step_num, local_rank))
+    os.remove(trainer_path)
 
 
 def log_noacc(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss, step_num,
