@@ -56,6 +56,10 @@ cmd="python3 /home/ubuntu/repos/byteps/launcher/dist_launcher.py \
   --env BYTEPS_SERVER_ENGINE_THREAD:4 \
   --env BYTEPS_PARTITION_BYTES:4096000 \
   --env BYTEPS_LOG_LEVEL:INFO \
+  --env BYTEPS_TRACE_ON:1 \
+  --env BYTEPS_TRACE_START_STEP:100 \
+  --env BYTEPS_TRACE_END_STEP:110 \
+  --env BYTEPS_TRACE_DIR:./traces \
   source ~/.profile; bash -c \"bpslaunch python3 /home/ubuntu/repos/gluon-nlp-1/scripts/bert/run_pretraining.py \
   --data=$DATA \
   --data_eval=$DATAEVAL \
